@@ -1,6 +1,8 @@
 import jwt
 from fastapi import Request
+from models import User
 from starlette.middleware.base import BaseHTTPMiddleware
+from tortoise.exceptions import DoesNotExist
 from utils.log import Log
 from utils.tokens import decode_token
 
@@ -19,9 +21,15 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             if scheme.lower() != "bearer" or not token:
                 raise jwt.InvalidTokenError
             payload = decode_token(token, "access")
-            # Authenticate user
-            request.state.user = payload["sub"]
-            request.state.is_authenticated = True
+            try:
+                user_id = payload["sub"]
+                user = await User.get(id=user_id)
+                request.state.user = user_id
+                request.state.user_role = user.role
+                request.state.is_authenticated = True
+            except DoesNotExist:
+                Log.warning(message="User does not exist")
+                request.state.is_authenticated = False
         except jwt.PyJWTError:
             Log.warning(message="Invalid or missing token")
             request.state.is_authenticated = False
