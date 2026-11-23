@@ -1,0 +1,9 @@
+from tortoise import fields
+from tortoise.models import Model
+
+
+class BaseModel(Model):
+    id = fields.CharField(max_length=20, primary_key=True)
+
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
