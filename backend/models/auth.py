@@ -2,7 +2,7 @@ from enum import Enum
 
 from tortoise import fields
 from tortoise.validators import EmailValidator
-from utils.base_db_model import BaseModel
+from utils.base_db_model import BaseModel, generate_id
 
 
 class User(BaseModel):
@@ -17,6 +17,10 @@ class User(BaseModel):
 
 
 class Membership(BaseModel):
+    id = fields.CharField(
+        max_length=20, primary_key=True, default=lambda: generate_id("mem")
+    )
+
     user = fields.ForeignKeyField("models.User", related_name="teams")
     team = fields.ForeignKeyField("models.Team", related_name="users")
 

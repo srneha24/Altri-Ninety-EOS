@@ -1,5 +1,11 @@
+from uuid import uuid4
+
 from tortoise import fields
 from tortoise.models import Model
+
+
+def generate_id(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex[:14]}"
 
 
 class BaseModel(Model):

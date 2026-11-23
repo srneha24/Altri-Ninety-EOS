@@ -4,7 +4,7 @@ from typing import Any
 from tortoise import fields
 from tortoise.exceptions import ValidationError
 from tortoise.validators import MaxValueValidator, MinValueValidator
-from utils.base_db_model import BaseModel
+from utils.base_db_model import BaseModel, generate_id
 from utils.custom_db_validators import IssueSourceValidator
 
 
@@ -25,6 +25,10 @@ class Measurable(BaseModel):
 
 
 class Score(BaseModel):
+    id = fields.CharField(
+        max_length=20, primary_key=True, default=lambda: generate_id("score")
+    )
+
     week_start = fields.DateField()
     value = fields.FloatField()
 
@@ -102,7 +106,12 @@ class Issue(BaseModel):
             if not await source_models[key].filter(id=source_id).exists():
                 raise ValidationError(f"{key} does not exist")
 
-            dupes = Issue.filter(source__contains={key: source_id})
+            dupes = Issue.filter(
+                source__contains={
+                    key: source_id,
+                    "week_start": self.source.get("week_start"),
+                }
+            )
             if self.pk is not None:
                 dupes = dupes.exclude(pk=self.pk)
             if await dupes.exists():
@@ -140,6 +149,10 @@ class Meeting(BaseModel):
 
 
 class MeetingAttendee(BaseModel):
+    id = fields.CharField(
+        max_length=20, primary_key=True, default=lambda: generate_id("att")
+    )
+
     rating = fields.SmallIntegerField(
         null=True, validators=[MinValueValidator(1), MaxValueValidator(10)]
     )
