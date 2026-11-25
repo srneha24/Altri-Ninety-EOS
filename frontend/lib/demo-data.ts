@@ -25,12 +25,14 @@ export type DemoMeasurable = {
   ownerId: string
   unit: string
   goal: Goal
+  teamId?: string
 }
 
 export type DemoIssue = {
   id: string
   title: string
   ownerId: string
+  teamId?: string
   priority: number | null
   createdAt: string
   source: { measurableId: string; weekStart: string } | null
@@ -42,6 +44,7 @@ export type DemoTodo = {
   id: string
   title: string
   ownerId: string
+  teamId?: string
   dueDate: string
   doneAt: string | null
   issueId: string | null
@@ -59,6 +62,7 @@ export type DemoRock = {
   id: string
   title: string
   ownerId: string
+  teamId?: string
   seededStatus: "on_track" | "off_track" | "complete"
   milestones: DemoMilestone[]
 }
@@ -67,6 +71,7 @@ export type MeetingSection = "scorecard" | "ids" | "conclude"
 
 export type DemoMeeting = {
   status: "active" | "ended"
+  teamId: string
   facilitatorId: string
   section: MeetingSection
   sectionStartedAt: number
@@ -75,15 +80,41 @@ export type DemoMeeting = {
   createdTodoIds: string[]
   solvedIssueIds: string[]
   endedAt: string | null
+  snapshot?: MeetingSummarySnapshot
 }
 
 export type DemoEndedMeeting = {
   id: string
+  teamId: string
   endedAt: string
   attendees: string[]
   ratings: Record<string, number>
   solvedIssueIds: string[]
   createdTodoIds: string[]
+  snapshot?: MeetingSummarySnapshot
+}
+
+export type MeetingSummarySnapshot = {
+  endedAt: string
+  weekStart: string
+  measurables: {
+    id: string
+    name: string
+    ownerId: string
+    unit: string
+    goal: Goal
+    score: number | null
+  }[]
+  solvedIssues: { id: string; title: string; resolutionNote: string }[]
+  createdTodos: {
+    id: string
+    title: string
+    ownerId: string
+    dueDate: string
+    issueId: string | null
+  }[]
+  attendees: string[]
+  ratings: Record<string, number>
 }
 
 export const DEMO_USERS: DemoUser[] = [
@@ -118,6 +149,7 @@ export const DEMO_MEASURABLES: DemoMeasurable[] = [
     ownerId: "demo-alex",
     unit: "demos",
     goal: { type: "at_least", value: 8 },
+    teamId: "demo-team-studio",
   },
   {
     id: "first-response",
@@ -125,6 +157,7 @@ export const DEMO_MEASURABLES: DemoMeasurable[] = [
     ownerId: "demo-sam",
     unit: "hours",
     goal: { type: "at_most", value: 2.5 },
+    teamId: "demo-team-operations",
   },
   {
     id: "customer-sentiment",
@@ -132,6 +165,7 @@ export const DEMO_MEASURABLES: DemoMeasurable[] = [
     ownerId: "demo-jordan",
     unit: "out of 5",
     goal: { type: "between", min: 4.2, max: 5 },
+    teamId: "demo-team-growth",
   },
   {
     id: "release-blockers",
@@ -139,6 +173,7 @@ export const DEMO_MEASURABLES: DemoMeasurable[] = [
     ownerId: "demo-alex",
     unit: "blockers",
     goal: { type: "exactly", value: 0 },
+    teamId: "demo-team-operations",
   },
 ]
 
@@ -226,6 +261,7 @@ export const DEMO_ISSUES: DemoIssue[] = [
     id: "demo-issue-briefing",
     title: "Demo follow-up cadence is inconsistent",
     ownerId: "demo-alex",
+    teamId: "demo-team-studio",
     priority: 5,
     createdAt: "2026-11-16T15:40:00Z",
     source: { measurableId: "qualified-demos", weekStart: "2026-11-16" },
@@ -236,6 +272,7 @@ export const DEMO_ISSUES: DemoIssue[] = [
     id: "demo-issue-onboarding",
     title: "New customer handoff needs a clear owner",
     ownerId: "demo-sam",
+    teamId: "demo-team-studio",
     priority: 3,
     createdAt: "2026-11-18T17:10:00Z",
     source: null,
@@ -246,6 +283,7 @@ export const DEMO_ISSUES: DemoIssue[] = [
     id: "demo-issue-template",
     title: "Refresh the product walkthrough template",
     ownerId: "demo-jordan",
+    teamId: "demo-team-studio",
     priority: 2,
     createdAt: "2026-11-10T16:20:00Z",
     source: null,
@@ -259,6 +297,7 @@ export const DEMO_TODOS: DemoTodo[] = [
     id: "demo-todo-checklist",
     title: "Draft the demo follow-up checklist",
     ownerId: "demo-alex",
+    teamId: "demo-team-studio",
     dueDate: "2026-11-27",
     doneAt: null,
     issueId: "demo-issue-briefing",
@@ -268,6 +307,7 @@ export const DEMO_TODOS: DemoTodo[] = [
     id: "demo-todo-handoff",
     title: "Map the customer handoff steps",
     ownerId: "demo-sam",
+    teamId: "demo-team-studio",
     dueDate: "2026-11-20",
     doneAt: null,
     issueId: "demo-issue-onboarding",
@@ -277,6 +317,7 @@ export const DEMO_TODOS: DemoTodo[] = [
     id: "demo-todo-notes",
     title: "Share notes from the user interviews",
     ownerId: "demo-jordan",
+    teamId: "demo-team-studio",
     dueDate: "2026-11-19",
     doneAt: "2026-11-18T14:30:00Z",
     issueId: null,
@@ -289,6 +330,7 @@ export const DEMO_ROCKS: DemoRock[] = [
     id: "demo-rock-onboarding",
     title: "Make customer onboarding feel effortless",
     ownerId: "demo-jordan",
+    teamId: "demo-team-studio",
     seededStatus: "on_track",
     milestones: [
       { id: "demo-milestone-map", title: "Map the first-week journey", dueDate: "2026-10-30", done: true },
@@ -300,6 +342,7 @@ export const DEMO_ROCKS: DemoRock[] = [
     id: "demo-rock-launch",
     title: "Ship the next release with confidence",
     ownerId: "demo-alex",
+    teamId: "demo-team-studio",
     seededStatus: "off_track",
     milestones: [
       { id: "demo-milestone-qa", title: "Complete the quality checklist", dueDate: "2026-11-06", done: true },
@@ -310,6 +353,7 @@ export const DEMO_ROCKS: DemoRock[] = [
     id: "demo-rock-reporting",
     title: "Give every team a useful weekly view",
     ownerId: "demo-sam",
+    teamId: "demo-team-studio",
     seededStatus: "complete",
     milestones: [],
   },
@@ -330,18 +374,48 @@ export const DEMO_TODAY = "2026-11-24"
 export const DEMO_ENDED_MEETINGS: DemoEndedMeeting[] = [
   {
     id: "demo-ended-week-1",
+    teamId: "demo-team-studio",
     endedAt: "2026-11-17T16:10:00Z",
     attendees: ["demo-alex", "demo-jordan", "demo-sam"],
     ratings: { "demo-alex": 8, "demo-jordan": 9, "demo-sam": 8 },
     solvedIssueIds: ["demo-issue-template"],
     createdTodoIds: [],
+    snapshot: {
+      endedAt: "2026-11-17T16:10:00Z",
+      weekStart: "2026-11-16",
+      measurables: [
+        { id: "qualified-demos", name: "Qualified demos", ownerId: "demo-alex", unit: "demos", goal: { type: "at_least", value: 8 }, score: 7 },
+        { id: "first-response", name: "First response time", ownerId: "demo-sam", unit: "hours", goal: { type: "at_most", value: 2.5 }, score: 2.4 },
+        { id: "customer-sentiment", name: "Customer sentiment", ownerId: "demo-jordan", unit: "out of 5", goal: { type: "between", min: 4.2, max: 5 }, score: 4.4 },
+        { id: "release-blockers", name: "Release blockers", ownerId: "demo-alex", unit: "blockers", goal: { type: "exactly", value: 0 }, score: 0 },
+      ],
+      solvedIssues: [{ id: "demo-issue-template", title: "Refresh the product walkthrough template", resolutionNote: "The team published a new shared walkthrough outline." }],
+      createdTodos: [],
+      attendees: ["demo-alex", "demo-jordan", "demo-sam"],
+      ratings: { "demo-alex": 8, "demo-jordan": 9, "demo-sam": 8 },
+    },
   },
   {
     id: "demo-ended-week-2",
+    teamId: "demo-team-studio",
     endedAt: "2026-11-10T16:05:00Z",
     attendees: ["demo-alex", "demo-jordan", "demo-taylor"],
     ratings: { "demo-alex": 7, "demo-jordan": 8 },
     solvedIssueIds: [],
     createdTodoIds: ["demo-todo-notes"],
+    snapshot: {
+      endedAt: "2026-11-10T16:05:00Z",
+      weekStart: "2026-11-09",
+      measurables: [
+        { id: "qualified-demos", name: "Qualified demos", ownerId: "demo-alex", unit: "demos", goal: { type: "at_least", value: 8 }, score: 8 },
+        { id: "first-response", name: "First response time", ownerId: "demo-sam", unit: "hours", goal: { type: "at_most", value: 2.5 }, score: 2.1 },
+        { id: "customer-sentiment", name: "Customer sentiment", ownerId: "demo-jordan", unit: "out of 5", goal: { type: "between", min: 4.2, max: 5 }, score: 4.5 },
+        { id: "release-blockers", name: "Release blockers", ownerId: "demo-alex", unit: "blockers", goal: { type: "exactly", value: 0 }, score: 0 },
+      ],
+      solvedIssues: [],
+      createdTodos: [{ id: "demo-todo-notes", title: "Share notes from the user interviews", ownerId: "demo-jordan", dueDate: "2026-11-19", issueId: null }],
+      attendees: ["demo-alex", "demo-jordan", "demo-taylor"],
+      ratings: { "demo-alex": 7, "demo-jordan": 8 },
+    },
   },
 ]

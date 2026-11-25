@@ -11,6 +11,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { SelectMenu } from "@/components/ui/select-menu"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
 import { clearTokens, getRefreshToken, refreshSession } from "@/lib/auth"
 import type { DemoRole } from "@/lib/demo-data"
@@ -180,34 +181,30 @@ export function WorkspaceShell({
             <div className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-xs font-medium text-[#756d67]">
                 Team
-                <select
-                  aria-label="Select team"
-                  className="h-10 min-w-44 rounded-lg border border-[#e7ded6] bg-white px-3 text-sm text-[#30261f] outline-none focus:border-[#c96a29] focus:ring-4 focus:ring-[#c96a29]/10"
-                  onChange={(event) => setSelectedTeamId(event.target.value)}
+                <SelectMenu
+                  ariaLabel="Select team"
+                  className="h-10 min-w-44 rounded-lg px-3 text-sm"
+                  onChange={setSelectedTeamId}
+                  options={teams.map((team) => ({
+                    value: team.id,
+                    label: team.name,
+                  }))}
                   value={selectedTeamId}
-                >
-                  {teams.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
 
               <label className="flex items-center gap-2 text-xs font-medium text-[#756d67]">
                 Preview role
-                <select
-                  aria-label="Preview role"
-                  className="h-10 rounded-lg border border-[#e7ded6] bg-white px-3 text-sm text-[#30261f] outline-none focus:border-[#c96a29] focus:ring-4 focus:ring-[#c96a29]/10"
-                  onChange={(event) => setRole(event.target.value as DemoRole)}
+                <SelectMenu
+                  ariaLabel="Preview role"
+                  className="h-10 min-w-28 rounded-lg px-3 text-sm"
+                  onChange={(value) => setRole(value as DemoRole)}
+                  options={Object.entries(roleLabels).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
                   value={role}
-                >
-                  {Object.entries(roleLabels).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
+                />
               </label>
             </div>
           </div>

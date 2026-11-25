@@ -5,7 +5,7 @@ import { Check, Circle, Clock3, Undo2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
-import { DEMO_ISSUES, DEMO_TODAY, DEMO_USERS } from "@/lib/demo-data"
+import { DEMO_TODAY, DEMO_USERS } from "@/lib/demo-data"
 
 const LAST_CLOSED_WEEK_START = "2026-11-16"
 const LAST_CLOSED_WEEK_END = "2026-11-22"
@@ -23,13 +23,8 @@ function shortDate(date: string): string {
   })
 }
 
-function issueTitle(issueId: string | null): string | null {
-  if (!issueId) return null
-  return DEMO_ISSUES.find((issue) => issue.id === issueId)?.title ?? null
-}
-
 export function TodosSection() {
-  const { todos, role, toggleTodo } = useDemoWorkspace()
+  const { todos, issues, role, toggleTodo } = useDemoWorkspace()
   const canWrite = role !== "observer"
 
   const completion = useMemo(() => {
@@ -86,7 +81,9 @@ export function TodosSection() {
       <div className="divide-y divide-[#f5f0ec]">
         {todos.map((todo) => {
           const overdue = !todo.doneAt && todo.dueDate < DEMO_TODAY
-          const linkedIssue = issueTitle(todo.issueId)
+          const linkedIssue = todo.issueId
+            ? issues.find((issue) => issue.id === todo.issueId)?.title ?? null
+            : null
           return (
             <article
               className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"

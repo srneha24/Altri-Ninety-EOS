@@ -14,9 +14,10 @@ import { useDemoWorkspace } from "@/components/demo-workspace-provider"
 import { IssuesSection } from "@/components/issues-section"
 import { ScorecardSection, getScoreStatus } from "@/components/scorecard-section"
 import {
-  DEMO_ENDED_MEETINGS,
   DEMO_USERS,
   MEETING_AGENDA,
+  type DemoEndedMeeting,
+  type MeetingSummarySnapshot,
   type MeetingSection,
 } from "@/lib/demo-data"
 
@@ -57,8 +58,10 @@ export function MeetingPage() {
     scores,
     issues,
     todos,
+    endedMeetings,
   } = useDemoWorkspace()
   const [now, setNow] = useState(0)
+  const [selectedEndedMeetingId, setSelectedEndedMeetingId] = useState<string | null>(null)
   const section = meeting
     ? (MEETING_AGENDA.find((item) => item.id === meeting.section) ??
       MEETING_AGENDA[0])
@@ -146,7 +149,7 @@ export function MeetingPage() {
             Recent ended meetings
           </h2>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {DEMO_ENDED_MEETINGS.map((endedMeeting) => {
+            {endedMeetings.map((endedMeeting) => {
               const ratings = Object.values(endedMeeting.ratings)
               const average = ratings.length
                 ? Math.round(
@@ -156,9 +159,11 @@ export function MeetingPage() {
                   ) / 10
                 : null
               return (
-                <article
-                  className="rounded-xl border border-[#f1ebe6] bg-[#fcfaf8] p-4"
+                <button
+                  className="w-full rounded-xl border border-[#f1ebe6] bg-[#fcfaf8] p-4 text-left text-[#30261f] hover:border-[#e8bd9e] hover:bg-[#fff9f3]"
                   key={endedMeeting.id}
+                  onClick={() => setSelectedEndedMeetingId(endedMeeting.id)}
+                  type="button"
                 >
                   <p className="text-xs font-semibold text-[#30261f]">
                     Level 10 · {formatTimestamp(endedMeeting.endedAt)}
@@ -171,11 +176,27 @@ export function MeetingPage() {
                     {endedMeeting.solvedIssueIds.length} Issues solved ·{" "}
                     {endedMeeting.createdTodoIds.length} To-Dos created
                   </p>
-                </article>
+                </button>
               )
             })}
           </div>
         </section>
+        {selectedEndedMeetingId ? (
+          (() => {
+            const selected = endedMeetings.find(
+              (item) => item.id === selectedEndedMeetingId
+            )
+            if (!selected) return null
+            const snapshot = selected.snapshot
+            return (
+              <EndedMeetingDetail
+                meeting={selected}
+                snapshot={snapshot}
+                onClose={() => setSelectedEndedMeetingId(null)}
+              />
+            )
+          })()
+        ) : null}
       </div>
     )
   }
@@ -578,6 +599,124 @@ function SummaryList({
         <p className="mt-2 text-xs text-[#91867e]">{emptyLabel}</p>
       )}
     </div>
+  )
+}
+
+function EndedMeetingDetail({
+  meeting,
+  snapshot,
+  onClose,
+}: {
+  meeting: DemoEndedMeeting
+  snapshot: MeetingSummarySnapshot | undefined
+  onClose: () => void
+}) {
+  const fallbackAttendees = meeting.attendees
+  const fallbackRatings = meeting.ratings
+  const ratings = snapshot?.ratings ?? fallbackRatings
+  const attendeeIds = snapshot?.attendees ?? fallbackAttendees
+  const ratingValues = Object.values(ratings)
+  const average = ratingValues.length
+    ? Math.round(
+        (ratingValues.reduce((sum, rating) => sum + rating, 0) /
+          ratingValues.length) *
+          10
+      ) / 10
+    : null
+
+  return (
+    <section className="rounded-2xl border border-[#eee5de] bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold tracking-wide text-[#91867e] uppercase">
+            Ended meeting
+          </p>
+          <h2 className="mt-1 text-lg font-semibold text-[#30261f]">
+            Level 10 · {formatTimestamp(meeting.endedAt)}
+          </h2>
+        </div>
+        <Button className="h-8 rounded-lg text-xs" onClick={onClose} type="button" variant="outline">
+          Close
+        </Button>
+      </div>
+
+      <div className="mt-5 grid gap-6 lg:grid-cols-2">
+        <div>
+          <h3 className="text-sm font-semibold text-[#30261f]">
+            Last closed-week measurable statuses
+          </h3>
+          {snapshot ? (
+            <ul className="mt-3 space-y-2">
+              {snapshot.measurables.map((measurable) => {
+                const status =
+                  measurable.score === null
+                    ? "off_track"
+                    : measurable.goal.type === "at_least"
+                      ? measurable.score >= measurable.goal.value
+                        ? "on_track"
+                        : "off_track"
+                      : measurable.goal.type === "at_most"
+                        ? measurable.score <= measurable.goal.value
+                          ? "on_track"
+                          : "off_track"
+                        : measurable.goal.type === "between"
+                          ? measurable.score >= measurable.goal.min &&
+                            measurable.score <= measurable.goal.max
+                            ? "on_track"
+                            : "off_track"
+                          : measurable.score === measurable.goal.value
+                            ? "on_track"
+                            : "off_track"
+                return (
+                  <li className="flex items-center justify-between gap-3 rounded-lg bg-[#fcfaf8] px-3 py-2.5" key={measurable.id}>
+                    <span className="text-xs font-medium text-[#53463d]">{measurable.name}</span>
+                    <span className="flex items-center gap-2 text-xs text-[#756d67]">
+                      {measurable.score === null ? "No score" : `${measurable.score} ${measurable.unit}`}
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${status === "on_track" ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>
+                        {status === "on_track" ? "On track" : "Off track"}
+                      </span>
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <p className="mt-3 text-xs text-[#91867e]">No measurable snapshot was saved.</p>
+          )}
+        </div>
+
+        <div className="space-y-5">
+          <SummaryList
+            title="Solved Issues"
+            emptyLabel="No Issues were solved."
+            items={
+              snapshot?.solvedIssues.map((issue) => ({
+                id: issue.id,
+                title: issue.title,
+                detail: issue.resolutionNote,
+              })) ?? []
+            }
+          />
+          <SummaryList
+            title="Created To-Dos"
+            emptyLabel="No To-Dos were created."
+            items={
+              snapshot?.createdTodos.map((todo) => ({
+                id: todo.id,
+                title: todo.title,
+                detail: `${personName(todo.ownerId)} · due ${todo.dueDate}`,
+              })) ?? []
+            }
+          />
+        </div>
+      </div>
+
+      <MeetingRatingSummary
+        attendees={attendeeIds}
+        averageRating={average}
+        ratings={ratings}
+      />
+    </section>
   )
 }
 

@@ -12,6 +12,7 @@ import {
 
 import {
   DEMO_ISSUES,
+  DEMO_ENDED_MEETINGS,
   DEMO_MEASURABLES,
   DEMO_ROCKS,
   DEMO_SCORES,
@@ -21,10 +22,12 @@ import {
   DEMO_USERS,
   DEMO_WEEKS,
   type DemoIssue,
+  type DemoEndedMeeting,
   type DemoMeeting,
   type DemoRole,
   type DemoTodo,
   type MeetingSection,
+  type MeetingSummarySnapshot,
 } from "@/lib/demo-data"
 
 type DemoWorkspaceContextValue = {
@@ -52,6 +55,7 @@ type DemoWorkspaceContextValue = {
   toggleTodo: (todoId: string) => void
   rocks: typeof DEMO_ROCKS
   meeting: DemoMeeting | null
+  endedMeetings: DemoEndedMeeting[]
   startMeeting: () => void
   joinMeeting: () => void
   advanceMeeting: () => void
@@ -79,6 +83,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
   const [issues, setIssues] = useState(DEMO_ISSUES)
   const [todos, setTodos] = useState(DEMO_TODOS)
   const [meeting, setMeeting] = useState<DemoMeeting | null>(null)
+  const [endedMeetings, setEndedMeetings] = useState<DemoEndedMeeting[]>(DEMO_ENDED_MEETINGS)
 
   useEffect(() => {
     const saved = window.localStorage.getItem(WORKSPACE_STORAGE_KEY)
@@ -89,12 +94,15 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
           issues?: DemoIssue[]
           todos?: DemoTodo[]
           meeting?: DemoMeeting | null
+          endedMeetings?: DemoEndedMeeting[]
         }
         queueMicrotask(() => {
           if (parsed.scores) setScores(parsed.scores)
           if (parsed.issues) setIssues(parsed.issues)
           if (parsed.todos) setTodos(parsed.todos)
           if ("meeting" in parsed) setMeeting(parsed.meeting ?? null)
+          if (parsed.endedMeetings) setEndedMeetings(parsed.endedMeetings)
+          if (parsed.endedMeetings) setEndedMeetings(parsed.endedMeetings)
         })
       } catch {
         window.localStorage.removeItem(WORKSPACE_STORAGE_KEY)
@@ -109,11 +117,13 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
           issues?: DemoIssue[]
           todos?: DemoTodo[]
           meeting?: DemoMeeting | null
+          endedMeetings?: DemoEndedMeeting[]
         }
         if (parsed.scores) setScores(parsed.scores)
         if (parsed.issues) setIssues(parsed.issues)
         if (parsed.todos) setTodos(parsed.todos)
         if ("meeting" in parsed) setMeeting(parsed.meeting ?? null)
+        if (parsed.endedMeetings) setEndedMeetings(parsed.endedMeetings)
       } catch {
         // Ignore malformed cross-tab workspace snapshots.
       }
@@ -126,9 +136,9 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     window.localStorage.setItem(
       WORKSPACE_STORAGE_KEY,
-      JSON.stringify({ scores, issues, todos, meeting })
+    JSON.stringify({ scores, issues, todos, meeting, endedMeetings })
     )
-  }, [scores, issues, todos, meeting])
+  }, [scores, issues, todos, meeting, endedMeetings])
 
   const currentUser = useMemo(
     () => ({ ...DEMO_USERS[0], role }),
@@ -177,6 +187,47 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
     [teams]
   )
 
+  const teamMeasurables = useMemo(
+    () =>
+      DEMO_MEASURABLES.filter(
+        (measurable) =>
+          !measurable.teamId || measurable.teamId === selectedTeamId
+      ),
+    [selectedTeamId]
+  )
+
+  const teamIssues = useMemo(
+    () =>
+      issues.filter(
+        (issue) => !issue.teamId || issue.teamId === selectedTeamId
+      ),
+    [issues, selectedTeamId]
+  )
+
+  const teamTodos = useMemo(
+    () =>
+      todos.filter(
+        (todo) => !todo.teamId || todo.teamId === selectedTeamId
+      ),
+    [todos, selectedTeamId]
+  )
+
+  const teamRocks = useMemo(
+    () =>
+      DEMO_ROCKS.filter(
+        (rock) => !rock.teamId || rock.teamId === selectedTeamId
+      ),
+    [selectedTeamId]
+  )
+
+  const teamEndedMeetings = useMemo(
+    () =>
+      endedMeetings.filter(
+        (endedMeeting) => endedMeeting.teamId === selectedTeamId
+      ),
+    [endedMeetings, selectedTeamId]
+  )
+
   const updateScore = useCallback(
     (measurableId: string, weekStart: string, score: number) => {
       setScores((previous) => ({
@@ -212,6 +263,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
         id: `demo-issue-${crypto.randomUUID()}`,
         title,
         ownerId: currentUser.id,
+        teamId: selectedTeamId,
         priority,
         createdAt: "2026-11-24T15:00:00Z",
         source,
@@ -221,7 +273,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       setIssues((previous) => [issue, ...previous])
       return issue
     },
-    [currentUser.id, issues]
+    [currentUser.id, issues, selectedTeamId]
   )
 
   const updateIssuePriority = useCallback(
@@ -265,6 +317,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
         id: `demo-todo-${crypto.randomUUID()}`,
         title,
         ownerId,
+        teamId: selectedTeamId,
         dueDate: nextTodoDueDate(),
         doneAt: null,
         issueId,
@@ -281,7 +334,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       )
       return todo
     },
-    []
+    [selectedTeamId]
   )
 
   const toggleTodo = useCallback((todoId: string) => {
@@ -303,6 +356,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
     }
     setMeeting({
       status: "active",
+      teamId: selectedTeamId,
       facilitatorId: currentUser.id,
       section: "scorecard",
       sectionStartedAt: Date.now(),
@@ -312,7 +366,7 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       solvedIssueIds: [],
       endedAt: null,
     })
-  }, [currentUser.id, role])
+  }, [currentUser.id, role, selectedTeamId])
 
   const joinMeeting = useCallback(() => {
     setMeeting((previous) => {
@@ -355,13 +409,59 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       ) {
         return previous
       }
+      const endedAt = "2026-11-24T15:00:00Z"
+      const weekStart = DEMO_WEEKS[DEMO_WEEKS.length - 2]
+      const snapshot: MeetingSummarySnapshot = {
+        endedAt,
+        weekStart,
+        measurables: teamMeasurables.map((measurable) => ({
+          id: measurable.id,
+          name: measurable.name,
+          ownerId: measurable.ownerId,
+          unit: measurable.unit,
+          goal: measurable.goal,
+          score: scores[measurable.id]?.[weekStart] ?? null,
+        })),
+        solvedIssues: issues
+          .filter((issue) => previous.solvedIssueIds.includes(issue.id))
+          .map((issue) => ({
+            id: issue.id,
+            title: issue.title,
+            resolutionNote: issue.resolutionNote ?? "",
+          })),
+        createdTodos: todos
+          .filter((todo) => previous.createdTodoIds.includes(todo.id))
+          .map((todo) => ({
+            id: todo.id,
+            title: todo.title,
+            ownerId: todo.ownerId,
+            dueDate: todo.dueDate,
+            issueId: todo.issueId,
+          })),
+        attendees: [...previous.attendees],
+        ratings: { ...previous.ratings },
+      }
+      setEndedMeetings((previousEnded) => [
+        {
+          id: `demo-ended-${crypto.randomUUID()}`,
+          teamId: previous.teamId,
+          endedAt,
+          attendees: snapshot.attendees,
+          ratings: snapshot.ratings,
+          solvedIssueIds: [...previous.solvedIssueIds],
+          createdTodoIds: [...previous.createdTodoIds],
+          snapshot,
+        },
+        ...previousEnded,
+      ])
       return {
         ...previous,
         status: "ended",
-        endedAt: "2026-11-24T15:00:00Z",
+        endedAt,
+        snapshot,
       }
     })
-  }, [currentUser.id])
+  }, [currentUser.id, issues, scores, todos, teamMeasurables])
 
   const submitRating = useCallback(
     (rating: number) => {
@@ -396,19 +496,21 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       selectedTeam,
       setRole,
       setSelectedTeamId,
-      measurables: DEMO_MEASURABLES,
+      measurables: teamMeasurables,
       weeks: DEMO_WEEKS,
       scores,
       updateScore,
-      issues,
+      issues: teamIssues,
       createIssue,
       updateIssuePriority,
       solveIssue,
-      todos,
+      todos: teamTodos,
       addTodo,
       toggleTodo,
-      rocks: DEMO_ROCKS,
-      meeting,
+      rocks: teamRocks,
+      meeting:
+        meeting && meeting.teamId === selectedTeamId ? meeting : null,
+      endedMeetings: teamEndedMeetings,
       startMeeting,
       joinMeeting,
       advanceMeeting,
@@ -421,7 +523,11 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       createIssue,
       currentUser,
       endMeeting,
-      issues,
+      teamIssues,
+      teamTodos,
+      teamMeasurables,
+      teamRocks,
+      teamEndedMeetings,
       joinMeeting,
       meeting,
       role,
@@ -434,7 +540,6 @@ export function DemoWorkspaceProvider({ children }: { children: ReactNode }) {
       startMeeting,
       submitRating,
       teams,
-      todos,
       toggleTodo,
       updateIssuePriority,
       updateScore,

@@ -232,7 +232,7 @@ export function ScorecardSection({
                           <input
                             aria-label={`${measurable.name}, week of ${formatWeek(week)} score`}
                             autoFocus
-                            className="h-7 w-full rounded-md border border-[#dfc4ae] px-1 text-center text-xs outline-none focus:ring-2 focus:ring-[#c96a29]/20"
+                            className="h-7 w-full rounded-md border border-[#dfc4ae] bg-white px-1 text-center text-xs text-[#30261f] outline-none focus:ring-2 focus:ring-[#c96a29]/20"
                             onChange={(event) =>
                               setEditingValue(event.target.value)
                             }

@@ -4,6 +4,7 @@ import { useMemo, useState, type SubmitEvent } from "react"
 import { AlertTriangle, Check, ChevronDown, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { SelectMenu } from "@/components/ui/select-menu"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
 import { DEMO_MEASURABLES, DEMO_USERS, type DemoIssue } from "@/lib/demo-data"
 
@@ -105,25 +106,22 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
         </div>
         <label className="flex shrink-0 items-center gap-2 text-[11px] font-medium text-[#756d67]">
           Priority
-          <select
-            aria-label={`Priority for ${issue.title}`}
-            className="h-8 rounded-lg border border-[#e7ded6] bg-white px-2 text-xs text-[#30261f] outline-none focus:border-[#c96a29] disabled:cursor-not-allowed disabled:bg-[#faf8f6]"
+          <SelectMenu
+            ariaLabel={`Priority for ${issue.title}`}
+            className="h-8 min-w-28 rounded-lg px-2 text-xs"
             disabled={!canWrite || isSolved}
-            onChange={(event) =>
-              updateIssuePriority(
-                issue.id,
-                event.target.value ? Number(event.target.value) : null
-              )
+            onChange={(value) =>
+              updateIssuePriority(issue.id, value ? Number(value) : null)
             }
-            value={issue.priority ?? ""}
-          >
-            <option value="">No priority</option>
-            {[5, 4, 3, 2, 1].map((priority) => (
-              <option key={priority} value={priority}>
-                {priority}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: "No priority" },
+              ...[5, 4, 3, 2, 1].map((priority) => ({
+                value: String(priority),
+                label: String(priority),
+              })),
+            ]}
+            value={issue.priority === null ? "" : String(issue.priority)}
+          />
         </label>
       </div>
 
@@ -186,18 +184,16 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
           </label>
           <label className="space-y-1 text-[11px] font-medium text-[#756d67]">
             Owner
-            <select
-              className="h-9 w-full rounded-lg border border-[#e7ded6] bg-white px-2 text-xs text-[#30261f] outline-none focus:border-[#c96a29]"
-              onChange={(event) => setTodoOwnerId(event.target.value)}
-              required
+            <SelectMenu
+              ariaLabel="To-Do owner"
+              className="h-9 w-full rounded-lg px-2 text-xs"
+              onChange={setTodoOwnerId}
+              options={owners.map((owner) => ({
+                value: owner.id,
+                label: owner.name,
+              }))}
               value={todoOwnerId || owners[0]?.id || ""}
-            >
-              {owners.map((owner) => (
-                <option key={owner.id} value={owner.id}>
-                  {owner.name}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <Button className="mt-auto h-9 rounded-lg text-xs" type="submit">
             Add · 7 days
@@ -337,18 +333,19 @@ export function IssuesSection({ title = "Issues" }: IssuesSectionProps) {
           </label>
           <label className="space-y-1 text-[11px] font-medium text-[#756d67]">
             Priority
-            <select
-              className="h-10 w-full rounded-lg border border-[#e7ded6] bg-white px-3 text-sm text-[#30261f] outline-none focus:border-[#c96a29]"
-              onChange={(event) => setNewPriority(event.target.value)}
+            <SelectMenu
+              ariaLabel="New issue priority"
+              className="h-10 w-full rounded-lg px-3 text-sm"
+              onChange={setNewPriority}
+              options={[
+                { value: "", label: "No priority" },
+                ...[5, 4, 3, 2, 1].map((priority) => ({
+                  value: String(priority),
+                  label: String(priority),
+                })),
+              ]}
               value={newPriority}
-            >
-              <option value="">{`No priority`}</option>
-              {[5, 4, 3, 2, 1].map((priority) => (
-                <option key={priority} value={priority}>
-                  {priority}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           <Button className="mt-auto h-10 rounded-lg text-xs" type="submit">
             Add Issue
