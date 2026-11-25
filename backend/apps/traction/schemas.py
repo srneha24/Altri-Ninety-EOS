@@ -19,7 +19,7 @@ class ScorecardParams(BaseModel):
 
 
 ScoreResponse = pydantic_model_creator(
-    Score, name="ScoreResponse", exclude=("measurable",)
+    Score, name="ScoreResponse", exclude=("measurable", "mesurable_id")
 )
 
 
@@ -33,6 +33,10 @@ class ScorecardResponse(BaseModel):
     scores: list[ScoreResponse]  # type: ignore
     created_at: datetime
     updated_at: datetime
+
+
+class ScoreUpdatePayload(BaseModel):
+    value: float = Field(...)
 
 
 class IssuesParams(BaseModel):
@@ -65,6 +69,12 @@ class IssueResponse(_IssueResponseBase):
     owner: _OwnerResponse  # type: ignore
 
 
+class IssueUpdatePayload(BaseModel):
+    title: str | None = Field(None)
+    priority: int | None = Field(None, ge=1, le=5)
+    resolution_note: str | None = Field(None)
+
+
 class TodoParams(BaseModel):
     class OrderBy(str, Enum):
         DUE_DATA_ASC = "due_date"
@@ -72,6 +82,7 @@ class TodoParams(BaseModel):
         CREATED_AT_ASC = "created_at"
         CREATED_AT_DESC = "-created_at"
 
+    done: bool | None = Field(None)
     issue_id: str | None = Field(None)
     owner_id: str | None = Field(None)
     order_by: OrderBy = Field(OrderBy.DUE_DATA_ASC)
@@ -91,6 +102,10 @@ _TodoResponseBase = pydantic_model_creator(
 class TodoResponse(_TodoResponseBase):
     issue: _IssueMinimalResponse | None = Field(default=None, validation_alias="source_issue")  # type: ignore
     owner: _OwnerResponse  # type: ignore
+
+
+class TodoUpdatePayload(BaseModel):
+    done: bool = Field(...)
 
 
 class RockParams(BaseModel):

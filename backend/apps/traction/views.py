@@ -1,17 +1,25 @@
+from datetime import UTC, datetime
+
 from conf.responses import CustomJSONResponse
+from fastapi import HTTPException
 from models import Issue, Measurable, Rock, Score, Todo
+from tortoise.exceptions import DoesNotExist
 from tortoise.query_utils import Prefetch
 from utils.json_actions import simplify_json
 
 from .schemas import (
     IssueResponse,
     IssuesParams,
+    IssueUpdatePayload,
     QuarterlyRockResponse,
     RockParams,
     ScorecardParams,
     ScorecardResponse,
+    ScoreResponse,
+    ScoreUpdatePayload,
     TodoParams,
     TodoResponse,
+    TodoUpdatePayload,
 )
 
 
@@ -45,6 +53,22 @@ async def get_scorecard_view(team_id: str, params: ScorecardParams):
             ]
         }
     )
+
+
+async def update_measurable_score_view(score_id: str, payload: ScoreUpdatePayload):
+    try:
+        score = await Score.get(id=score_id)
+        score.value = payload.value
+        await score.save()
+
+        return CustomJSONResponse(
+            message="Score Updated",
+            content={
+                "data": simplify_json(ScoreResponse.model_validate(score).model_dump())
+            },
+        )
+    except DoesNotExist:
+        raise HTTPException(detail="Score Not found", status_code=404)
 
 
 async def get_issues_view(team_id: str, params: IssuesParams):
@@ -103,8 +127,42 @@ async def get_issues_view(team_id: str, params: IssuesParams):
     return CustomJSONResponse(content=results)
 
 
+async def update_issue_view(issue_id: str, payload: IssueUpdatePayload):
+    try:
+        issue = await Issue.get(id=issue_id).select_related("owner")
+
+        update_payload = payload.model_dump(exclude_unset=True)
+        if payload.resolution_note and not issue.solved_at:
+            update_payload["solved_at"] = datetime.now(UTC)
+        elif (
+            "resolution_note" in payload.model_fields_set
+            and payload.resolution_note is None
+            and issue.solved_at
+        ):
+            raise HTTPException(
+                detail="Solved issue cannot have null resolution_note", status_code=400
+            )
+
+        issue.update_from_dict(update_payload)
+        await issue.save()
+
+        return CustomJSONResponse(
+            content={
+                "data": simplify_json(IssueResponse.model_validate(issue).model_dump())
+            }
+        )
+    except DoesNotExist:
+        raise HTTPException(detail="Issue Not Found", status_code=404)
+
+
 async def get_todos_view(team_id: str, params: TodoParams):
     query = Todo.filter(team_id=team_id).select_related("source_issue", "owner")
+
+    if params.done is not None:
+        if params.done:
+            query = query.filter(done_at__isnull=False)
+        else:
+            query = query.filter(done_at__isnull=True)
 
     if params.issue_id:
         query = query.filter(source_issue_id=params.issue_id)
@@ -116,6 +174,35 @@ async def get_todos_view(team_id: str, params: TodoParams):
     return CustomJSONResponse(
         content={"data": [simplify_json(result.model_dump()) for result in results]}
     )
+
+
+async def update_todo_view(todo_id: str, payload: TodoUpdatePayload):
+    try:
+        todo = await Todo.get(id=todo_id).select_related("owner", "source_issue")
+
+        if payload.done:
+            if todo.done_at:
+                return CustomJSONResponse(
+                    content={
+                        "data": simplify_json(
+                            TodoResponse.model_validate(todo).model_dump()
+                        )
+                    }
+                )
+
+            todo.done_at = datetime.now(UTC)
+        else:
+            todo.done_at = None
+
+        await todo.save()
+
+        return CustomJSONResponse(
+            content={
+                "data": simplify_json(TodoResponse.model_validate(todo).model_dump())
+            }
+        )
+    except DoesNotExist:
+        raise HTTPException(detail="Todo Not Found", status_code=404)
 
 
 async def get_quarterly_rocks_view(team_id: str, params: RockParams):

@@ -19,38 +19,11 @@ class IsAuthenticated:
             )
 
 
-class IsAdmin(IsAuthenticated):
-    """Permission Class For Admin Users"""
+class IsAdminOrTeamMember:
+    """Permission Class For Admin or Team Member Users. MUST be used with HasAccessToTeam."""
 
-    async def __call__(self, request: Request, _=Depends(bearer_scheme)):  # noqa: B008
-        await super().__call__(request, _)
-        if request.state.user_role != User.Role.ADMIN:
-            Log.warning(
-                message=f"User role not allowed to access | path: {request.url.path}"
-            )
-            raise HTTPException(detail="User Not Allowed", status_code=403)
-
-
-class IsAdminOrTeamMember(IsAuthenticated):
-    """Permission Class For Admin or Team Member Users"""
-
-    async def __call__(self, request: Request, _=Depends(bearer_scheme)):  # noqa: B008
-        await super().__call__(request, _)
-
-        user_id = request.state.user
-        team_id = request.path_params["team_id"]
-
-        if not await Team.filter(id=team_id).exists():
-            raise HTTPException(detail="Team not found", status_code=400)
-        elif request.state.user_role not in (User.Role.ADMIN, User.Role.TEAM_MEMBER):
-            Log.warning(
-                message=f"User role not allowed to access | path: {request.url.path}"
-            )
-            raise HTTPException(detail="User Not Allowed", status_code=403)
-        elif (
-            request.state.user_role == User.Role.TEAM_MEMBER
-            and not await Membership.filter(user_id=user_id, team_id=team_id).exists()
-        ):
+    async def __call__(self, request: Request):
+        if request.state.user_role not in (User.Role.ADMIN, User.Role.TEAM_MEMBER):
             raise HTTPException(detail="Access Denied", status_code=403)
 
 

@@ -1,14 +1,25 @@
 from typing import Annotated
 
-from conf.permissions import HasAccessToTeam
+from conf.permissions import HasAccessToTeam, IsAdminOrTeamMember
 from fastapi import APIRouter, Depends, Path, Query, Request
 
-from .schemas import IssuesParams, RockParams, ScorecardParams, TodoParams
+from .schemas import (
+    IssuesParams,
+    IssueUpdatePayload,
+    RockParams,
+    ScorecardParams,
+    ScoreUpdatePayload,
+    TodoParams,
+    TodoUpdatePayload,
+)
 from .views import (
     get_issues_view,
     get_quarterly_rocks_view,
     get_scorecard_view,
     get_todos_view,
+    update_issue_view,
+    update_measurable_score_view,
+    update_todo_view,
 )
 
 router = APIRouter(
@@ -28,6 +39,18 @@ async def get_scorecard(
     return await get_scorecard_view(team_id=team_id, params=params)
 
 
+@router.patch(
+    "/teams/{team_id}/scores/{score_id}", dependencies=[Depends(IsAdminOrTeamMember())]
+)
+async def update_measurable_score(
+    _request: Request,
+    payload: ScoreUpdatePayload,
+    team_id: str = Path(...),
+    score_id: str = Path(...),
+):
+    return await update_measurable_score_view(score_id=score_id, payload=payload)
+
+
 @router.get("/teams/{team_id}/issues")
 async def get_issues(
     _request: Request,
@@ -37,6 +60,18 @@ async def get_issues(
     return await get_issues_view(team_id=team_id, params=params)
 
 
+@router.patch(
+    "/teams/{team_id}/issues/{issue_id}", dependencies=[Depends(IsAdminOrTeamMember())]
+)
+async def update_issue(
+    _request: Request,
+    payload: IssueUpdatePayload,
+    team_id: str = Path(...),
+    issue_id: str = Path(...),
+):
+    return await update_issue_view(issue_id=issue_id, payload=payload)
+
+
 @router.get("/teams/{team_id}/todos")
 async def get_todos(
     _request: Request,
@@ -44,6 +79,18 @@ async def get_todos(
     team_id: str = Path(...),
 ):
     return await get_todos_view(team_id=team_id, params=params)
+
+
+@router.patch(
+    "/teams/{team_id}/todos/{todo_id}", dependencies=[Depends(IsAdminOrTeamMember())]
+)
+async def update_todo(
+    _request: Request,
+    payload: TodoUpdatePayload,
+    team_id: str = Path(...),
+    todo_id: str = Path(...),
+):
+    return await update_todo_view(todo_id=todo_id, payload=payload)
 
 
 @router.get("/teams/{team_id}/quarterly-rocks")
