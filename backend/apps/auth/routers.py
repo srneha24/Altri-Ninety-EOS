@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Request
+from conf.permissions import IsAuthenticated
+from fastapi import APIRouter, Depends, Request
 
 from .schemas import LoginPayload, RefreshPayload
-from .views import login_view, refresh_session_view
+from .views import get_user_teams_view, login_view, refresh_session_view
 
 router = APIRouter(
     prefix="/auth",
@@ -18,3 +19,8 @@ async def login(_request: Request, payload: LoginPayload):
 @router.post("/refresh")
 async def refresh_session(_request: Request, payload: RefreshPayload):
     return await refresh_session_view(payload=payload)
+
+
+@router.get("/teams", dependencies=[Depends(IsAuthenticated())])
+async def get_user_teams(request: Request):
+    return await get_user_teams_view(user_id=request.state.user)

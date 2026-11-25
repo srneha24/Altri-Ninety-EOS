@@ -1,7 +1,7 @@
 from conf.responses import CustomJSONResponse
 from fastapi import HTTPException
 from jwt import InvalidTokenError
-from models import User
+from models import Membership, User
 from tortoise.exceptions import DoesNotExist
 from utils.log import Log
 from utils.tokens import decode_token, get_tokens
@@ -35,3 +35,8 @@ async def refresh_session_view(payload: RefreshPayload):
             raise HTTPException(detail="Invalid token", status_code=400)
     except InvalidTokenError:
         raise HTTPException(detail="Invalid token", status_code=400)
+
+
+async def get_user_teams_view(user_id: str):
+    teams = await Membership.filter(user_id=user_id).values_list("team_id", flat=True)
+    return CustomJSONResponse(content={"teams": teams})
