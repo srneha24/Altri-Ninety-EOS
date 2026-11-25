@@ -2,7 +2,8 @@ from enum import Enum
 
 from tortoise import fields
 from tortoise.validators import EmailValidator
-from utils.base_db_model import BaseModel, generate_id
+
+from .base_db_model import BaseModel, generate_id
 
 
 class User(BaseModel):

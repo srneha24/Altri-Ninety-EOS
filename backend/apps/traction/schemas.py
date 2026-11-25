@@ -69,6 +69,50 @@ class IssueResponse(_IssueResponseBase):
     owner: _OwnerResponse  # type: ignore
 
 
+class Source(BaseModel):
+    measurable_id: str | None = Field(None)
+    rock_id: str | None = Field(None)
+    todo_id: str | None = Field(None)
+    week_start: date | None = Field(None)
+
+    @model_validator(mode="after")
+    def check_at_least_one_id_is_set(self) -> "Source":
+        source_ids = {"measurable_id", "todo_id", "rock_id"}
+        if any(
+            source_id is not None and not source_id.strip()
+            for source_id in (self.measurable_id, self.todo_id, self.rock_id)
+        ):
+            raise ValueError("Source IDs must be non-empty strings")
+        if not self.measurable_id and not self.rock_id and not self.todo_id:
+            raise ValueError(
+                "At least one of measurable_id, todo_id and rock_id needs to be set"
+            )
+        elif len(source_ids & self.model_fields_set) >= 2:
+            raise ValueError("Exactly one of measurable_id/todo_id/rock_id is required")
+        elif (self.rock_id or self.todo_id) and self.week_start:
+            raise ValueError("week_start can only be set with measurable_id")
+        elif (self.measurable_id and not self.week_start) or (
+            self.week_start and not self.measurable_id
+        ):
+            raise ValueError("measurable_id and week_start both required")
+
+        if self.week_start is not None and self.week_start.weekday() != 0:
+            raise ValueError("week_start must be a Monday")
+        return self
+
+
+class IssueCreatePayload(BaseModel):
+    title: str | None = Field(None)
+    priority: int | None = Field(None)
+    source: Source | None = Field(None)
+
+    @model_validator(mode="after")
+    def check_title_and_source_states(self) -> "IssueCreatePayload":
+        if not self.title and not self.source:
+            raise ValueError("title needs to be set if there is no source")
+        return self
+
+
 class IssueUpdatePayload(BaseModel):
     title: str | None = Field(None)
     priority: int | None = Field(None, ge=1, le=5)
@@ -102,6 +146,12 @@ _TodoResponseBase = pydantic_model_creator(
 class TodoResponse(_TodoResponseBase):
     issue: _IssueMinimalResponse | None = Field(default=None, validation_alias="source_issue")  # type: ignore
     owner: _OwnerResponse  # type: ignore
+
+
+class TodoCreatePayload(BaseModel):
+    title: str = Field(...)
+    source_issue_id: str | None = Field(None)
+    owner_id: str = Field(...)
 
 
 class TodoUpdatePayload(BaseModel):

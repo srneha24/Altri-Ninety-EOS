@@ -1,13 +1,15 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from conf.responses import CustomJSONResponse
 from fastapi import HTTPException
-from models import Issue, Measurable, Rock, Score, Todo
+from models import Issue, Measurable, Rock, Score, Todo, User
 from tortoise.exceptions import DoesNotExist
+from tortoise.models import Model
 from tortoise.query_utils import Prefetch
 from utils.json_actions import simplify_json
 
 from .schemas import (
+    IssueCreatePayload,
     IssueResponse,
     IssuesParams,
     IssueUpdatePayload,
@@ -17,6 +19,7 @@ from .schemas import (
     ScorecardResponse,
     ScoreResponse,
     ScoreUpdatePayload,
+    TodoCreatePayload,
     TodoParams,
     TodoResponse,
     TodoUpdatePayload,
@@ -127,6 +130,83 @@ async def get_issues_view(team_id: str, params: IssuesParams):
     return CustomJSONResponse(content=results)
 
 
+async def create_issue_view(team_id: str, user_id: str, payload: IssueCreatePayload):
+    if payload.source:
+        source_model_mapping: dict[str, Model] = {
+            "measurable_id": Measurable,
+            "rock_id": Rock,
+            "todo_id": Todo,
+        }
+        check_condition = {}
+        issue_source_key = ""
+        source_id = ""
+        if payload.source.measurable_id:
+            check_condition.update(
+                {
+                    "measurable_id": payload.source.measurable_id,
+                    "week_start": payload.source.week_start.isoformat(),
+                }
+            )
+            issue_source_key = "measurable_id"
+            source_id = payload.source.measurable_id
+        elif payload.source.rock_id:
+            check_condition["rock_id"] = payload.source.rock_id
+            issue_source_key = "rock_id"
+            source_id = payload.source.rock_id
+        else:
+            check_condition["todo_id"] = payload.source.todo_id
+            issue_source_key = "todo_id"
+            source_id = payload.source.todo_id
+
+        existing_issue = (
+            await Issue.filter(source__contains=check_condition)
+            .select_related("owner")
+            .first()
+        )
+        if existing_issue:
+            source_model = source_model_mapping.get(issue_source_key)
+            source = await source_model.get(
+                id=existing_issue.source.get(issue_source_key)
+            )
+            existing_issue.source["title"] = (
+                source.name if issue_source_key == "measurable_id" else source.title
+            )
+            return CustomJSONResponse(
+                content={
+                    "data": simplify_json(
+                        IssueResponse.model_validate(existing_issue).model_dump()
+                    )
+                }
+            )
+        else:
+            source_model = source_model_mapping.get(issue_source_key)
+            try:
+                source = await source_model.get(id=source_id)
+                payload.title = (
+                    source.name if issue_source_key == "measurable_id" else source.title
+                )
+            except DoesNotExist:
+                raise HTTPException(detail="source Does Not Exist", status_code=400)
+
+    issue = await Issue.create(
+        title=payload.title,
+        priority=payload.priority,
+        source=payload.source.model_dump(exclude_none=True, exclude_unset=True),
+        owner_id=user_id,
+        team_id=team_id,
+    )
+    await issue.fetch_related("owner")
+    if issue.source:
+        issue.source["title"] = issue.title
+
+    return CustomJSONResponse(
+        content={
+            "data": simplify_json(IssueResponse.model_validate(issue).model_dump())
+        },
+        status_code=201,
+    )
+
+
 async def update_issue_view(issue_id: str, payload: IssueUpdatePayload):
     try:
         issue = await Issue.get(id=issue_id).select_related("owner")
@@ -145,6 +225,17 @@ async def update_issue_view(issue_id: str, payload: IssueUpdatePayload):
 
         issue.update_from_dict(update_payload)
         await issue.save()
+
+        if issue.source:
+            if "measurable_id" in issue.source:
+                source = await Measurable.get(id=issue.source.get("measurable_id"))
+                issue.source["title"] = source.name
+            elif "rock_id" in issue.source:
+                source = await Rock.get(id=issue.source.get("rock_id"))
+                issue.source["title"] = source.title
+            else:
+                source = await Todo.get(id=issue.source.get("todo_id"))
+                issue.source["title"] = source.title
 
         return CustomJSONResponse(
             content={
@@ -173,6 +264,31 @@ async def get_todos_view(team_id: str, params: TodoParams):
     results = await TodoResponse.from_queryset(query.order_by(params.order_by.value))
     return CustomJSONResponse(
         content={"data": [simplify_json(result.model_dump()) for result in results]}
+    )
+
+
+async def create_todo_view(team_id: str, payload: TodoCreatePayload):
+    try:
+        await User.get(id=payload.owner_id)
+    except DoesNotExist:
+        raise HTTPException(detail="Owner Does Not Exist", status_code=400)
+
+    if payload.source_issue_id:
+        try:
+            await Issue.get(id=payload.source_issue_id)
+        except DoesNotExist:
+            raise HTTPException(detail="Issue Does Not Exist", status_code=400)
+
+    todo = await Todo.create(
+        title=payload.title,
+        due_date=(datetime.now(UTC) + timedelta(days=7)).date(),
+        source_issue_id=payload.source_issue_id,
+        owner_id=payload.owner_id,
+        team_id=team_id,
+    )
+    await todo.fetch_related("owner", "source_issue")
+    return CustomJSONResponse(
+        content={"data": simplify_json(TodoResponse.model_validate(todo).model_dump())}
     )
 
 

@@ -4,8 +4,9 @@ from typing import Any
 from tortoise import fields
 from tortoise.exceptions import ValidationError
 from tortoise.validators import MaxValueValidator, MinValueValidator
-from utils.base_db_model import BaseModel, generate_id
-from utils.custom_db_validators import IssueSourceValidator
+
+from .base_db_model import BaseModel, generate_id
+from .custom_db_validators import IssueSourceValidator, WeekStartValidator
 
 
 class Measurable(BaseModel):
@@ -29,7 +30,7 @@ class Score(BaseModel):
         max_length=20, primary_key=True, default=lambda: generate_id("score")
     )
 
-    week_start = fields.DateField()
+    week_start = fields.DateField(validators=[WeekStartValidator()])
     value = fields.FloatField()
 
     measurable = fields.ForeignKeyField(
@@ -106,12 +107,19 @@ class Issue(BaseModel):
             if not await source_models[key].filter(id=source_id).exists():
                 raise ValidationError(f"{key} does not exist")
 
-            dupes = Issue.filter(
-                source__contains={
-                    key: source_id,
-                    "week_start": self.source.get("week_start"),
-                }
-            )
+            if key == "measurable_id":
+                dupes = Issue.filter(
+                    source__contains={
+                        key: source_id,
+                        "week_start": self.source.get("week_start"),
+                    }
+                )
+            else:
+                dupes = Issue.filter(
+                    source__contains={
+                        key: source_id,
+                    }
+                )
             if self.pk is not None:
                 dupes = dupes.exclude(pk=self.pk)
             if await dupes.exists():
