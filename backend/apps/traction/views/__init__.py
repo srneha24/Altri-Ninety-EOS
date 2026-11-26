@@ -8,6 +8,7 @@ from .actions import (  # noqa: F401
     update_issue_view,
     update_measurable_score_view,
     update_todo_view,
+    upsert_measurable_score_view,
 )
 from .meetings import (  # noqa: F401
     get_active_meeting_view,

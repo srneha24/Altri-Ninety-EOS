@@ -21,6 +21,7 @@ import {
 import { ApiError } from "@/lib/api-client"
 import { getAccessToken } from "@/lib/auth"
 import { readMeetingEventStream } from "@/lib/meeting-sse"
+import type { DemoIssue, DemoTodo } from "@/lib/types"
 
 const AGENDA = [
   { id: "start", label: "Scorecard", minutes: 5 },
@@ -32,9 +33,10 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 function formatTime(value: string) { return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Chicago" }) }
 function formatDuration(value: number) { const seconds = Math.abs(value); return `${value < 0 ? "+" : ""}${Math.floor(seconds / 60).toString().padStart(2, "0")}:${(seconds % 60).toString().padStart(2, "0")}` }
 function sectionStartedAt(meeting: ApiMeeting) { return meeting.state === "conclude" ? meeting.conclude_started_at ?? meeting.started_at : meeting.state === "ids" ? meeting.ids_started_at ?? meeting.started_at : meeting.started_at }
+function roundHalfUp1dp(value: number) { return (Math.floor(value * 10 + 0.5 + Number.EPSILON) / 10).toFixed(1) }
 
 export function MeetingPage() {
-  const { currentUser, members, selectedTeamId, loading: workspaceLoading } = useTeamWorkspace()
+  const { currentUser, members, todos, issues, selectedTeamId, loading: workspaceLoading, refreshWorkspace } = useTeamWorkspace()
   const [meeting, setMeeting] = useState<ApiMeeting | null>(null)
   const [summaries, setSummaries] = useState<ApiMeetingSummary[]>([])
   const [selectedSummary, setSelectedSummary] = useState<ApiMeetingSummary | null>(null)
@@ -42,6 +44,19 @@ export function MeetingPage() {
   const [pending, setPending] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [now, setNow] = useState(0)
+  const [clockAnchor, setClockAnchor] = useState<{ meetingId: string; serverMs: number; clientMs: number } | null>(null)
+
+  const syncMeetingState = useCallback((next: ApiMeeting | null) => {
+    setMeeting(next && !next.ended_at ? next : null)
+    if (next && !next.ended_at) {
+      const serverMs = next.server_now ? new Date(next.server_now).getTime() : new Date(sectionStartedAt(next)).getTime()
+      const clientMs = Date.now()
+      setClockAnchor({ meetingId: next.id, serverMs, clientMs })
+      setNow(clientMs)
+    } else {
+      setClockAnchor(null)
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true); setNotice(null)
@@ -53,33 +68,12 @@ export function MeetingPage() {
         }),
         getMeetingSummaries(selectedTeamId),
       ])
-      setMeeting(active); setSummaries(historic)
+      syncMeetingState(active); setSummaries(historic)
     } catch (error) { setNotice(errorMessage(error)) } finally { setLoading(false) }
-  }, [selectedTeamId])
+  }, [selectedTeamId, syncMeetingState])
 
   useEffect(() => { void Promise.resolve().then(load) }, [load])
   useEffect(() => { if (!meeting) return; const id = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(id) }, [meeting])
-  const activeMeetingId = meeting?.id
-  useEffect(() => {
-    if (!activeMeetingId) return
-    const token = getAccessToken(); if (!token) return
-    const controller = new AbortController(); let retry: number | undefined; let attempts = 0
-    const connect = async () => {
-      try {
-        await readMeetingEventStream(selectedTeamId, activeMeetingId, token, controller.signal, {
-          onMeetingState: (next) => { setMeeting(next.ended_at ? null : next); if (next.ended_at) void load() },
-          onUnavailable: setNotice,
-        })
-        attempts = 0
-      } catch (error) {
-        if (controller.signal.aborted) return
-        attempts += 1; setNotice(errorMessage(error))
-        retry = window.setTimeout(() => void connect(), Math.min(1000 * 2 ** attempts, 15000))
-      }
-    }
-    void connect()
-    return () => { controller.abort(); if (retry) window.clearTimeout(retry) }
-  }, [activeMeetingId, load, selectedTeamId])
 
   const waitForSummary = useCallback(async (meetingId: string) => {
     setNotice("Preparing the meeting summary…")
@@ -97,12 +91,41 @@ export function MeetingPage() {
     setNotice("The summary is still being prepared. Please reopen it shortly.")
   }, [selectedTeamId])
 
+  const activeMeetingId = meeting?.id
+  useEffect(() => {
+    if (!activeMeetingId) return
+    const token = getAccessToken(); if (!token) return
+    const controller = new AbortController(); let retry: number | undefined; let attempts = 0
+    const connect = async () => {
+      try {
+        await readMeetingEventStream(selectedTeamId, activeMeetingId, token, controller.signal, {
+          onMeetingState: (next) => {
+            syncMeetingState(next)
+            if (next.ended_at) {
+              void waitForSummary(next.id)
+              void load()
+            }
+          },
+          onWorkspaceUpdated: () => { void refreshWorkspace() },
+          onUnavailable: setNotice,
+        })
+        attempts = 0
+      } catch (error) {
+        if (controller.signal.aborted) return
+        attempts += 1; setNotice(errorMessage(error))
+        retry = window.setTimeout(() => void connect(), Math.min(1000 * 2 ** attempts, 15000))
+      }
+    }
+    void connect()
+    return () => { controller.abort(); if (retry) window.clearTimeout(retry) }
+  }, [activeMeetingId, load, refreshWorkspace, selectedTeamId, syncMeetingState, waitForSummary])
+
   const mutate = useCallback(async (request: () => Promise<ApiMeeting | void>) => {
     setPending(true); setNotice(null)
-    try { const result = await request(); if (result) setMeeting(result.ended_at ? null : result); return result }
+    try { const result = await request(); if (result) syncMeetingState(result); return result }
     catch (error) { setNotice(errorMessage(error)); return undefined }
     finally { setPending(false) }
-  }, [])
+  }, [syncMeetingState])
 
   const start = () => void mutate(() => updateMeetingState(selectedTeamId, "start"))
   const join = () => void mutate(async () => { if (!meeting) return; await joinMeeting(selectedTeamId, meeting.id) })
@@ -113,7 +136,7 @@ export function MeetingPage() {
   if (workspaceLoading || loading) return <p className="rounded-xl border border-[#eee5de] bg-white px-5 py-4 text-sm text-[#756d67]">Loading meeting workspace…</p>
   return <div className="space-y-6">
     {notice ? <p aria-live="polite" className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">{notice}</p> : null}
-    {meeting ? <ActiveMeeting meeting={meeting} currentUserId={currentUser.id} canRate={currentUser.role !== "observer"} members={members} now={now} pending={pending} onJoin={join} onAdvance={advance} onEnd={end} onRate={rate} /> : <InactiveMeeting canStart={currentUser.role !== "observer"} pending={pending} summaries={summaries} selectedSummary={selectedSummary && summaries.some((item) => item.id === selectedSummary.id) ? selectedSummary : null} onStart={start} onSelect={setSelectedSummary} onClose={() => setSelectedSummary(null)} />}
+    {meeting ? <ActiveMeeting meeting={meeting} currentUserId={currentUser.id} canRate={currentUser.role !== "observer"} members={members} todos={todos} issues={issues} clockAnchor={clockAnchor} now={now} pending={pending} onJoin={join} onAdvance={advance} onEnd={end} onRate={rate} /> : <InactiveMeeting canStart={currentUser.role !== "observer"} pending={pending} summaries={summaries} selectedSummary={selectedSummary && summaries.some((item) => item.id === selectedSummary.id) ? selectedSummary : null} onStart={start} onSelect={setSelectedSummary} onClose={() => setSelectedSummary(null)} />}
   </div>
 }
 
@@ -126,18 +149,20 @@ function InactiveMeeting({ canStart, pending, summaries, selectedSummary, onStar
   </>
 }
 
-function ActiveMeeting({ meeting, currentUserId, canRate, members, now, pending, onJoin, onAdvance, onEnd, onRate }: { meeting: ApiMeeting; currentUserId: string; canRate: boolean; members: { id: string; name: string; initials: string }[]; now: number; pending: boolean; onJoin: () => void; onAdvance: () => void; onEnd: () => void; onRate: (rating: number) => void }) {
+function ActiveMeeting({ meeting, currentUserId, canRate, members, todos, issues, clockAnchor, now, pending, onJoin, onAdvance, onEnd, onRate }: { meeting: ApiMeeting; currentUserId: string; canRate: boolean; members: { id: string; name: string; initials: string }[]; todos: DemoTodo[]; issues: DemoIssue[]; clockAnchor: { meetingId: string; serverMs: number; clientMs: number } | null; now: number; pending: boolean; onJoin: () => void; onAdvance: () => void; onEnd: () => void; onRate: (rating: number) => void }) {
   const section = AGENDA.find((item) => item.id === meeting.state) ?? AGENDA[0]
-  const clock = now || new Date(sectionStartedAt(meeting)).getTime()
-  const seconds = Math.ceil((section.minutes * 60_000 - (clock - new Date(sectionStartedAt(meeting)).getTime())) / 1000)
+  const startedMs = new Date(sectionStartedAt(meeting)).getTime()
+  const clock = clockAnchor && clockAnchor.meetingId === meeting.id ? clockAnchor.serverMs + Math.max(0, (now || clockAnchor.clientMs) - clockAnchor.clientMs) : startedMs
+  const seconds = Math.ceil((section.minutes * 60_000 - (clock - startedMs)) / 1000)
   const attending = meeting.attendees.some((item) => item.user.id === currentUserId)
   const facilitating = meeting.facilitator.id === currentUserId
   const selfRating = meeting.attendees.find((item) => item.user.id === currentUserId)?.rating ?? null
   const ratings = meeting.attendees.map((item) => item.rating).filter((item): item is number => item !== null)
   const average = ratings.length ? ratings.reduce((total, item) => total + item, 0) / ratings.length : null
+  const meetingTodos = todos.filter((todo) => todo.createdAt >= meeting.started_at)
   return <>
     <section className="overflow-hidden rounded-2xl border border-[#eee5de] bg-white shadow-sm"><div className="flex flex-col gap-5 border-b border-[#f1ebe6] px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between"><div><div className="flex items-center gap-2"><span className="size-2.5 rounded-full bg-emerald-500" /><span className="text-xs font-semibold tracking-wide text-emerald-800 uppercase">Meeting in progress</span>{facilitating ? <span className="rounded-full bg-[#fcf2e9] px-2 py-0.5 text-[10px] font-semibold text-[#9b4d18]">You are facilitating</span> : null}</div><h2 className="mt-2 text-lg font-semibold text-[#30261f]">{section.label}</h2><p className="mt-1 text-xs text-[#91867e]">Facilitator: {meeting.facilitator.name}</p></div><div className="flex flex-wrap items-center gap-3"><div className={`min-w-32 rounded-xl px-4 py-2.5 text-center ${seconds <= 0 ? "bg-rose-50 text-rose-800" : "bg-[#fcfaf8] text-[#30261f]"}`}><p className="text-[10px] font-medium tracking-wide uppercase">{seconds <= 0 ? "Over time" : "Section timer"}</p><p className="mt-0.5 font-mono text-xl font-semibold tabular-nums">{formatDuration(seconds)}</p></div>{!attending ? <Button disabled={pending} onClick={onJoin} type="button" variant="outline"><Users className="size-3.5" />Join meeting</Button> : null}{facilitating ? <>{meeting.state !== "conclude" ? <Button className="bg-[#a64e16] text-white hover:bg-[#873e10]" disabled={pending} onClick={onAdvance} type="button">Advance agenda <ArrowRight className="size-3.5" /></Button> : null}<Button disabled={pending} onClick={onEnd} type="button" variant="outline">End meeting</Button></> : null}</div></div><div className="grid gap-5 px-5 py-5 sm:px-6 lg:grid-cols-[1fr_260px]"><AgendaCards state={meeting.state} /><aside><h3 className="flex items-center gap-2 text-xs font-semibold text-[#53463d]"><Users className="size-3.5 text-[#9b4d18]" />Attendees · {meeting.attendees.length}</h3><ul className="mt-3 space-y-2">{meeting.attendees.map((attendee) => { const member = members.find((item) => item.id === attendee.user.id); return <li className="flex items-center justify-between rounded-lg bg-[#fcfaf8] px-3 py-2" key={attendee.id}><span className="flex items-center gap-2"><span className="grid size-7 place-items-center rounded-full bg-[#f7e5d7] text-[9px] font-semibold text-[#8e4214]">{member?.initials ?? attendee.user.name.slice(0, 2)}</span><span className="text-xs font-medium text-[#53463d]">{attendee.user.name}</span></span>{attendee.rating !== null ? <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#9b4d18]"><Star className="size-3 fill-current" />{attendee.rating}</span> : null}</li> })}</ul>{meeting.state === "conclude" ? <div className="mt-5 border-t border-[#f1ebe6] pt-4"><h3 className="text-xs font-semibold text-[#53463d]">Rate this meeting</h3>{attending && canRate ? <RatingSlider initialRating={selfRating} disabled={pending} onSave={onRate} /> : <p className="mt-2 text-[11px] text-[#91867e]">Join the meeting to rate it. Observers cannot submit ratings.</p>}</div> : null}</aside></div></section>
-    {meeting.state === "start" ? <ScorecardSection /> : null}{meeting.state === "ids" ? <IssuesSection /> : null}{meeting.state === "conclude" ? <section className="rounded-2xl border border-[#eee5de] bg-white p-5 shadow-sm"><h2 className="text-base font-semibold text-[#30261f]">Conclude</h2><p className="mt-1 text-xs text-[#91867e]">Recap this meeting&apos;s new To-Dos and the team rating.</p><p className="mt-4 rounded-lg bg-[#fcfaf8] px-3 py-2 text-xs text-[#756d67]">Average rating <strong className="text-[#30261f]">{average === null ? "Not rated" : `${average.toFixed(1)} / 10`}</strong></p></section> : null}
+    {meeting.state === "start" ? <ScorecardSection /> : null}{meeting.state === "ids" ? <IssuesSection /> : null}{meeting.state === "conclude" ? <section className="rounded-2xl border border-[#eee5de] bg-white p-5 shadow-sm"><h2 className="text-base font-semibold text-[#30261f]">Conclude</h2><p className="mt-1 text-xs text-[#91867e]">Recap this meeting&apos;s new To-Dos and the team rating.</p><p className="mt-4 rounded-lg bg-[#fcfaf8] px-3 py-2 text-xs text-[#756d67]">Average rating <strong className="text-[#30261f]">{average === null ? "Not rated" : `${roundHalfUp1dp(average)} / 10`}</strong></p><div className="mt-4"><h3 className="text-xs font-semibold text-[#53463d]">New To-Dos · {meetingTodos.length}</h3>{meetingTodos.length ? <ul className="mt-2 space-y-2">{meetingTodos.map((todo) => { const owner = members.find((item) => item.id === todo.ownerId)?.name ?? "Unknown owner"; const sourceIssue = todo.issueId ? issues.find((item) => item.id === todo.issueId)?.title : null; return <li className="rounded-lg bg-[#fcfaf8] px-3 py-2 text-xs text-[#30261f]" key={todo.id}><p className="font-medium">{todo.title}</p><p className="mt-0.5 text-[11px] text-[#756d67]">Owner: {owner} · Due {todo.dueDate}{sourceIssue ? ` · From Issue: ${sourceIssue}` : ""}</p></li> })}</ul> : <p className="mt-2 text-xs text-[#91867e]">No new To-Dos created in this meeting yet.</p>}</div></section> : null}
   </>
 }
 

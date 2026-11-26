@@ -4,7 +4,7 @@ import json
 from conf.responses import CustomJSONResponse
 from fastapi import BackgroundTasks, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from models import Meeting, MeetingAttendee
+from models import Issue, Meeting, MeetingAttendee, Score, Todo
 from tortoise.exceptions import DoesNotExist, IntegrityError
 from tortoise.transactions import in_transaction
 from utils.clock import get_app_now
@@ -30,13 +30,16 @@ async def meeting_state_view(
         if await Meeting.filter(team_id=team_id, ended_at__isnull=True).exists():
             raise HTTPException(detail="Team Is Already In A Meeting", status_code=400)
 
-        async with in_transaction():
-            meeting = await Meeting.create(
-                started_at=get_app_now(), facilitator_id=user_id, team_id=team_id
-            )
-            await MeetingAttendee.create(
-                user_id=user_id, meeting=meeting, joined_at=meeting.started_at
-            )
+        try:
+            async with in_transaction():
+                meeting = await Meeting.create(
+                    started_at=get_app_now(), facilitator_id=user_id, team_id=team_id
+                )
+                await MeetingAttendee.create(
+                    user_id=user_id, meeting=meeting, joined_at=meeting.started_at
+                )
+        except IntegrityError:
+            raise HTTPException(detail="Team Is Already In A Meeting", status_code=400)
 
         await meeting.fetch_related("facilitator", "attendees", "attendees__user")
     else:
@@ -48,7 +51,7 @@ async def meeting_state_view(
 
         try:
             meeting = (
-                await Meeting.get(id=payload.meeting_id)
+                await Meeting.get(id=payload.meeting_id, team_id=team_id)
                 .select_related("facilitator")
                 .prefetch_related("attendees", "attendees__user")
             )
@@ -60,6 +63,16 @@ async def meeting_state_view(
                 detail="Only facilitator Can Update Meeting State", status_code=403
             )
 
+        if meeting.ended_at is not None:
+            raise HTTPException(detail="Meeting Has Already Ended", status_code=400)
+
+        if payload.state == MeetingState.IDS and (
+            meeting.ids_started_at is not None or meeting.conclude_started_at is not None
+        ):
+            raise HTTPException(detail="Invalid meeting state transition", status_code=400)
+        if payload.state == MeetingState.CONCLUDE and meeting.conclude_started_at is not None:
+            raise HTTPException(detail="Invalid meeting state transition", status_code=400)
+
         meeting.update_from_dict(
             {state_to_datetime_field_mapping.get(payload.state): get_app_now()}
         )
@@ -68,6 +81,7 @@ async def meeting_state_view(
             background_tasks.add_task(save_meeting_summary, meeting.id)
 
     meeting.state = payload.state.value
+    meeting.server_now = get_app_now()
     return CustomJSONResponse(
         content={
             "data": simplify_json(MeetingResponse.model_validate(meeting).model_dump())
@@ -75,10 +89,10 @@ async def meeting_state_view(
     )
 
 
-async def get_meeting_view(meeting_id: str):
+async def get_meeting_view(team_id: str, meeting_id: str):
     try:
         meeting = (
-            await Meeting.get(id=meeting_id)
+            await Meeting.get(id=meeting_id, team_id=team_id)
             .select_related("facilitator")
             .prefetch_related("attendees", "attendees__user")
         )
@@ -92,6 +106,7 @@ async def get_meeting_view(meeting_id: str):
         else:
             meeting.state = MeetingState.START.value
 
+        meeting.server_now = get_app_now()
         return CustomJSONResponse(
             content={
                 "data": simplify_json(
@@ -103,10 +118,10 @@ async def get_meeting_view(meeting_id: str):
         raise HTTPException(detail="meeting Not Found", status_code=404)
 
 
-async def join_meeting_view(user_id: str, meeting_id: str):
+async def join_meeting_view(user_id: str, team_id: str, meeting_id: str):
     try:
         try:
-            meeting = await Meeting.get(id=meeting_id)
+            meeting = await Meeting.get(id=meeting_id, team_id=team_id)
         except DoesNotExist:
             raise HTTPException(detail="meeting Not Found", status_code=404)
 
@@ -125,14 +140,15 @@ async def join_meeting_view(user_id: str, meeting_id: str):
         return CustomJSONResponse(message="Meeting Joined", content={})
 
 
-async def get_meeting_attendees_view(meeting_id: str):
+async def get_meeting_attendees_view(team_id: str, meeting_id: str):
+    if not await Meeting.filter(id=meeting_id, team_id=team_id).exists():
+        raise HTTPException(detail="meeting Not Found", status_code=404)
+
     attendees = (
         await MeetingAttendee.filter(meeting_id=meeting_id)
         .select_related("user")
         .order_by("joined_at")
     )
-    if len(attendees) == 0:
-        raise HTTPException(detail="meeting Not Found", status_code=404)
 
     return CustomJSONResponse(
         content={
@@ -147,10 +163,10 @@ async def get_meeting_attendees_view(meeting_id: str):
 
 
 async def rate_meeting_view(
-    user_id: str, meeting_id: str, payload: MeetingRatingPayload
+    user_id: str, team_id: str, meeting_id: str, payload: MeetingRatingPayload
 ):
     try:
-        meeting = await Meeting.get(id=meeting_id)
+        meeting = await Meeting.get(id=meeting_id, team_id=team_id)
     except DoesNotExist:
         raise HTTPException(detail="meeting Not Found", status_code=404)
 
@@ -219,10 +235,26 @@ async def get_active_meeting_view(team_id: str):
     else:
         meeting.state = MeetingState.START.value
 
+    meeting.server_now = get_app_now()
     return CustomJSONResponse(
         content={
             "data": simplify_json(MeetingResponse.model_validate(meeting).model_dump())
         }
+    )
+
+
+async def _get_workspace_revision(team_id: str) -> tuple[str | None, str | None, str | None]:
+    latest_score = (
+        await Score.filter(measurable__team_id=team_id)
+        .order_by("-updated_at")
+        .first()
+    )
+    latest_issue = await Issue.filter(team_id=team_id).order_by("-updated_at").first()
+    latest_todo = await Todo.filter(team_id=team_id).order_by("-updated_at").first()
+    return (
+        latest_score.updated_at.isoformat() if latest_score else None,
+        latest_issue.updated_at.isoformat() if latest_issue else None,
+        latest_todo.updated_at.isoformat() if latest_todo else None,
     )
 
 
@@ -246,20 +278,27 @@ async def get_meeting_events_view(request: Request, team_id: str, meeting_id: st
         else:
             current_meeting.state = MeetingState.START.value
 
+        current_meeting.server_now = get_app_now()
         return simplify_json(
             MeetingResponse.model_validate(current_meeting).model_dump()
         )
 
-    initial_data = json.dumps(
-        serialize_meeting(meeting), separators=(",", ":"), sort_keys=True
-    )
+    def state_key(payload: dict[str, object]) -> str:
+        comparable = {k: v for k, v in payload.items() if k != "server_now"}
+        return json.dumps(comparable, separators=(",", ":"), sort_keys=True)
+
+    initial_payload = serialize_meeting(meeting)
+    initial_data = json.dumps(initial_payload, separators=(",", ":"), sort_keys=True)
+    initial_key = state_key(initial_payload)
+    initial_revision = await _get_workspace_revision(team_id)
 
     async def stream_events():
         yield f"event: meeting_state\ndata: {initial_data}\n\n"
         if meeting.ended_at:
             return
 
-        last_data = initial_data
+        last_key = initial_key
+        last_revision = initial_revision
         last_heartbeat = asyncio.get_running_loop().time()
 
         while not await request.is_disconnected():
@@ -277,17 +316,25 @@ async def get_meeting_events_view(request: Request, team_id: str, meeting_id: st
                 yield 'event: meeting_unavailable\ndata: {"detail":"meeting Not Found"}\n\n'
                 return
 
-            data = json.dumps(
-                serialize_meeting(current_meeting),
-                separators=(",", ":"),
-                sort_keys=True,
-            )
-            if data != last_data:
+            payload = serialize_meeting(current_meeting)
+            current_key = state_key(payload)
+            current_revision = await _get_workspace_revision(team_id)
+            emitted = False
+
+            if current_key != last_key:
+                data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
                 yield f"event: meeting_state\ndata: {data}\n\n"
-                last_data = data
+                last_key = current_key
+                emitted = True
                 if current_meeting.ended_at:
                     return
-            elif asyncio.get_running_loop().time() - last_heartbeat >= 15:
+
+            if current_revision != last_revision:
+                yield "event: workspace_updated\ndata: {}\n\n"
+                last_revision = current_revision
+                emitted = True
+
+            if not emitted and asyncio.get_running_loop().time() - last_heartbeat >= 15:
                 yield ": keep-alive\n\n"
                 last_heartbeat = asyncio.get_running_loop().time()
 

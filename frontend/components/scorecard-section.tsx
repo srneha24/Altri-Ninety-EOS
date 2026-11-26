@@ -235,9 +235,7 @@ export function ScorecardSection({
                   )
                   const key = `${measurable.id}:${week}`
                   const isEditing = editingKey === key
-                  const canEditScore =
-                    canEdit &&
-                    Boolean(workspace.scoreIds[measurable.id]?.[week])
+                  const canEditScore = canEdit
                   return (
                     <td className="px-1.5 py-2 text-center align-top" key={week}>
                       {isEditing ? (

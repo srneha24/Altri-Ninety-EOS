@@ -8,6 +8,7 @@ function getApiBaseUrl(): string {
 
 type MeetingEventHandlers = {
   onMeetingState: (meeting: ApiMeeting) => void
+  onWorkspaceUpdated?: () => void
   onUnavailable: (message: string) => void
 }
 
@@ -45,6 +46,7 @@ export async function readMeetingEventStream(
       const data = frame.match(/^data: (.+)$/m)?.[1]
       if (!event || !data) continue
       if (event === "meeting_state") handlers.onMeetingState(JSON.parse(data) as ApiMeeting)
+      if (event === "workspace_updated") handlers.onWorkspaceUpdated?.()
       if (event === "meeting_unavailable") handlers.onUnavailable("This meeting is no longer available.")
     }
   }

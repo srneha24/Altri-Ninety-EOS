@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated
 
 from conf.permissions import HasAccessToTeam, IsAdminOrTeamMember
@@ -35,6 +36,7 @@ from .views import (
     update_issue_view,
     update_measurable_score_view,
     update_todo_view,
+    upsert_measurable_score_view,
 )
 
 router = APIRouter(
@@ -63,7 +65,28 @@ async def update_measurable_score(
     team_id: str = Path(...),
     score_id: str = Path(...),
 ):
-    return await update_measurable_score_view(score_id=score_id, payload=payload)
+    return await update_measurable_score_view(
+        team_id=team_id, score_id=score_id, payload=payload
+    )
+
+
+@router.put(
+    "/teams/{team_id}/measurables/{measurable_id}/scores/{week_start}",
+    dependencies=[Depends(IsAdminOrTeamMember())],
+)
+async def upsert_measurable_score(
+    _request: Request,
+    payload: ScoreUpdatePayload,
+    team_id: str = Path(...),
+    measurable_id: str = Path(...),
+    week_start: date = Path(...),
+):
+    return await upsert_measurable_score_view(
+        team_id=team_id,
+        measurable_id=measurable_id,
+        week_start=week_start,
+        payload=payload,
+    )
 
 
 @router.get("/teams/{team_id}/issues")
@@ -93,7 +116,9 @@ async def update_issue(
     team_id: str = Path(...),
     issue_id: str = Path(...),
 ):
-    return await update_issue_view(issue_id=issue_id, payload=payload)
+    return await update_issue_view(
+        team_id=team_id, issue_id=issue_id, payload=payload
+    )
 
 
 @router.get("/teams/{team_id}/todos")
@@ -121,7 +146,7 @@ async def update_todo(
     team_id: str = Path(...),
     todo_id: str = Path(...),
 ):
-    return await update_todo_view(todo_id=todo_id, payload=payload)
+    return await update_todo_view(team_id=team_id, todo_id=todo_id, payload=payload)
 
 
 @router.get("/teams/{team_id}/quarterly-rocks")
@@ -161,18 +186,26 @@ async def get_active_meeting(_request: Request, team_id: str = Path(...)):
 
 
 @router.get("/teams/{team_id}/meetings/{meeting_id}")
-async def get_meeting(_request: Request, meeting_id: str = Path(...)):
-    return await get_meeting_view(meeting_id=meeting_id)
+async def get_meeting(
+    _request: Request, team_id: str = Path(...), meeting_id: str = Path(...)
+):
+    return await get_meeting_view(team_id=team_id, meeting_id=meeting_id)
 
 
 @router.post("/teams/{team_id}/meetings/{meeting_id}/attendees")
-async def join_meeting(request: Request, meeting_id: str = Path(...)):
-    return await join_meeting_view(user_id=request.state.user, meeting_id=meeting_id)
+async def join_meeting(
+    request: Request, team_id: str = Path(...), meeting_id: str = Path(...)
+):
+    return await join_meeting_view(
+        user_id=request.state.user, team_id=team_id, meeting_id=meeting_id
+    )
 
 
 @router.get("/teams/{team_id}/meetings/{meeting_id}/attendees")
-async def get_meeting_attendees(request: Request, meeting_id: str = Path(...)):
-    return await get_meeting_attendees_view(meeting_id=meeting_id)
+async def get_meeting_attendees(
+    request: Request, team_id: str = Path(...), meeting_id: str = Path(...)
+):
+    return await get_meeting_attendees_view(team_id=team_id, meeting_id=meeting_id)
 
 
 @router.post(
@@ -180,10 +213,16 @@ async def get_meeting_attendees(request: Request, meeting_id: str = Path(...)):
     dependencies=[Depends(IsAdminOrTeamMember())],
 )
 async def rate_meeting(
-    request: Request, payload: MeetingRatingPayload, meeting_id: str = Path(...)
+    request: Request,
+    payload: MeetingRatingPayload,
+    team_id: str = Path(...),
+    meeting_id: str = Path(...),
 ):
     return await rate_meeting_view(
-        user_id=request.state.user, meeting_id=meeting_id, payload=payload
+        user_id=request.state.user,
+        team_id=team_id,
+        meeting_id=meeting_id,
+        payload=payload,
     )
 
 

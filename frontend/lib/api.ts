@@ -91,6 +91,7 @@ export type ApiMeeting = {
   conclude_started_at: string | null
   ended_at: string | null
   state: MeetingState
+  server_now?: string
   facilitator: Pick<ApiUser, "id" | "name">
   attendees: ApiMeetingAttendee[]
 }
@@ -161,6 +162,18 @@ export function updateScore(
   return authenticatedRequest(
     `/traction/teams/${encodeURIComponent(teamId)}/scores/${encodeURIComponent(scoreId)}`,
     { method: "PATCH", body: JSON.stringify({ value }) }
+  )
+}
+
+export function upsertScore(
+  teamId: string,
+  measurableId: string,
+  weekStart: string,
+  value: number
+): Promise<ApiScore> {
+  return authenticatedRequest(
+    `/traction/teams/${encodeURIComponent(teamId)}/measurables/${encodeURIComponent(measurableId)}/scores/${encodeURIComponent(weekStart)}`,
+    { method: "PUT", body: JSON.stringify({ value }) }
   )
 }
 

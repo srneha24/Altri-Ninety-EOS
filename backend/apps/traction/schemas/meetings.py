@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 
 from models import Meeting, MeetingAttendee, User
@@ -46,6 +47,7 @@ _MeetingResponseBase = pydantic_model_creator(
 class MeetingResponse(_MeetingResponseBase):
     summary: dict | None
     state: MeetingState
+    server_now: datetime
     facilitator: _UserResponse  # type: ignore
     attendees: list[MeetingAttendeeResponse]
 

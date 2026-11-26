@@ -23,6 +23,8 @@ type WorkspaceShellProps = {
   children: ReactNode
 }
 
+const TEAM_STORAGE_KEY = "altri.workspace.teamId"
+
 const roleLabels: Record<DemoRole, string> = {
   admin: "Admin",
   team_member: "Team Member",
@@ -89,11 +91,16 @@ export function WorkspaceShell({
               memberIds: [],
             }))
           )
-          setSelectedTeamId((previous) =>
-            availableTeams.some((team) => team.id === previous)
-              ? previous
-              : availableTeams[0]?.id ?? ""
-          )
+          setSelectedTeamId((previous) => {
+            const stored = window.sessionStorage.getItem(TEAM_STORAGE_KEY)
+            if (previous && availableTeams.some((team) => team.id === previous)) {
+              return previous
+            }
+            if (stored && availableTeams.some((team) => team.id === stored)) {
+              return stored
+            }
+            return availableTeams[0]?.id ?? ""
+          })
           setWorkspaceError(
             availableTeams.length
               ? null
@@ -262,7 +269,10 @@ export function WorkspaceShell({
                 <SelectMenu
                   ariaLabel="Select team"
                   className="h-10 min-w-44 rounded-lg px-3 text-sm"
-                  onChange={setSelectedTeamId}
+                  onChange={(teamId) => {
+                    window.sessionStorage.setItem(TEAM_STORAGE_KEY, teamId)
+                    setSelectedTeamId(teamId)
+                  }}
                   options={teams.map((team) => ({
                     value: team.id,
                     label: team.name,

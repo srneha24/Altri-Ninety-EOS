@@ -1,10 +1,13 @@
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from models import Issue, Measurable, Meeting, MeetingAttendee, Rock, Score, Todo
 from tortoise.expressions import Q
+from utils.clock import get_cached_tz
 from utils.json_actions import simplify_json
 
+from .rules import compute_meeting_rating
 from .schemas import (
     IssueResponse,
     MeetingAttendeeResponse,
@@ -35,7 +38,11 @@ async def build_meeting_summary(meeting: Meeting) -> dict[str, Any]:
 
     team_id = meeting.team_id
     started_at = meeting.started_at
-    reviewed_week = started_at.date() - timedelta(days=started_at.weekday() + 7)
+    tz_name = get_cached_tz(team_id=team_id)
+    started_local_date = started_at.astimezone(ZoneInfo(tz_name)).date()
+    reviewed_week = started_local_date - timedelta(
+        days=started_local_date.weekday() + 7
+    )
     window = [(started_at, ended_at)]
 
     issues = (
@@ -113,8 +120,7 @@ async def build_meeting_summary(meeting: Meeting) -> dict[str, Any]:
     meeting_todos_created.sort(key=lambda todo: todo.created_at)
     meeting_todos_done.sort(key=lambda todo: todo.done_at or ended_at)
 
-    ratings = [attendee.rating for attendee in attendees if attendee.rating is not None]
-    avg_rating = round(sum(ratings) / len(ratings), 1) if ratings else None
+    avg_rating = compute_meeting_rating([attendee.rating for attendee in attendees])
 
     scores_by_measurable_id = {score.measurable_id: score for score in scores}
     measurable_summaries = []
@@ -161,7 +167,7 @@ async def build_meeting_summary(meeting: Meeting) -> dict[str, Any]:
             else None
         ),
         "ended_at": ended_at.isoformat(),
-        "duration_seconds": (ended_at - started_at).seconds,
+        "duration_seconds": int((ended_at - started_at).total_seconds()),
         "average_rating": avg_rating,
         "facilitator": {
             "id": meeting.facilitator.id,

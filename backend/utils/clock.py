@@ -1,11 +1,23 @@
 from datetime import UTC, date, datetime
 from zoneinfo import ZoneInfo
 
-from conf.settings import APP_NOW, COMPANY_TIMEZONE
+from conf.settings import APP_NOW
+
+# Default timezone used when no specific company or team timezone is available
+DEFAULT_TZ = "America/Chicago"
 from models import Company
 
 _company_tz_cache: dict[str, str] = {}
 _team_tz_cache: dict[str, str] = {}
+
+
+def get_cached_tz(team_id: str | None = None, company_id: str | None = None) -> str:
+    """Return the cached timezone for a team or company, defaulting to DEFAULT_TZ."""
+    if team_id and team_id in _team_tz_cache:
+        return _team_tz_cache[team_id]
+    if company_id and company_id in _company_tz_cache:
+        return _company_tz_cache[company_id]
+    return DEFAULT_TZ
 
 
 def get_app_now() -> datetime:
@@ -45,4 +57,4 @@ async def get_app_today(
                 _team_tz_cache[team_id] = tz_name
                 _company_tz_cache[team.company_id] = tz_name
 
-    return get_app_now().astimezone(ZoneInfo(tz_name or COMPANY_TIMEZONE)).date()
+    return get_app_now().astimezone(ZoneInfo(tz_name or DEFAULT_TZ)).date()

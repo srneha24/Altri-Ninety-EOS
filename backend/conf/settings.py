@@ -13,7 +13,6 @@ ACCESS_TTL = timedelta(minutes=60)
 REFRESH_TTL = timedelta(days=7)
 PUBLIC_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
 APP_NOW = os.getenv("APP_NOW", "2026-11-11T15:00:00Z")
-COMPANY_TIMEZONE = "America/Chicago"
 
 
 # URLs

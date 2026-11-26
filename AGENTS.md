@@ -7,6 +7,8 @@
 - Never edit `seed.json`, `assessment-brief.md`, `assessment-brief.docx`, or `Task README.md`.
 - Never add a Python library. If one is needed, ask the user to install it before proceeding.
 - Never edit `pyproject.toml`, `uv.lock`, or `package-lock.json`.
+- Don't create any markdown or any sort of documentation file in the project workspace unless explicitly instructed.
+- Only run tests when instructed.
 
 ## Project context
 

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from models import Issue, Rock, Score, Todo, User
+from models import Issue, Milestone, Rock, Score, Todo, User
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from tortoise.contrib.pydantic import pydantic_model_creator
 
@@ -103,7 +103,7 @@ class Source(BaseModel):
 
 class IssueCreatePayload(BaseModel):
     title: str | None = Field(None)
-    priority: int | None = Field(None)
+    priority: int | None = Field(None, ge=1, le=5)
     source: Source | None = Field(None)
 
     @model_validator(mode="after")
@@ -164,6 +164,10 @@ class QuarterlyRockParams(BaseModel):
     owner_id: str | None = Field(None)
 
 
+MilestoneResponse = pydantic_model_creator(
+    Milestone, name="MilestoneResponse", exclude=("rock", "rock_id")
+)
+
 _RockResponseBase = pydantic_model_creator(
     Rock, name="RockResponse", exclude=("team", "team_id")
 )
@@ -171,3 +175,4 @@ _RockResponseBase = pydantic_model_creator(
 
 class QuarterlyRockResponse(_RockResponseBase):
     owner: _OwnerResponse  # type: ignore
+    milestones: list[MilestoneResponse] = Field(default_factory=list)  # type: ignore

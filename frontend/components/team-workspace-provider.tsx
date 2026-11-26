@@ -22,6 +22,7 @@ import {
   updateIssue,
   updateScore as updateScoreRequest,
   updateTodo,
+  upsertScore as upsertScoreRequest,
   type ApiIssue,
   type ApiMember,
   type ApiMeasurable,
@@ -49,6 +50,7 @@ type TeamWorkspaceContextValue = {
   loading: boolean
   loaded: boolean
   error: string | null
+  refreshWorkspace: () => Promise<void>
   measurables: DemoMeasurable[]
   weeks: string[]
   today: string
@@ -261,6 +263,57 @@ export function TeamWorkspaceProvider({
   const selectedTeam =
     teams.find((team) => team.id === selectedTeamId) ?? null
 
+  const applyLoadedData = useCallback(
+    (data: Awaited<ReturnType<typeof loadTeamData>>) => {
+      const {
+        dates,
+        members: apiMembers,
+        scorecard,
+        issues: apiIssues,
+        todos: apiTodos,
+        rocks: apiRocks,
+      } = data
+      const mappedMembers = apiMembers.map(mapMember)
+      const { scores: scoreValues, scoreIds: ids } = makeScoreMaps(
+        scorecard,
+        dates.weeks
+      )
+      setMembers(mappedMembers)
+      setWeeks(dates.weeks)
+      setToday(dates.today)
+      setMeasurables(
+        scorecard.map((measurable) => ({
+          id: measurable.id,
+          name: measurable.name,
+          ownerId: measurable.owner.id,
+          unit: measurable.unit,
+          goal: measurable.goal,
+        }))
+      )
+      setScores(scoreValues)
+      setScoreIds(ids)
+      setIssues(apiIssues.map(mapIssue))
+      setTodos(apiTodos.map(mapTodo))
+      setRocks(apiRocks.map(mapRock))
+      setLoaded(true)
+      setLoading(false)
+    },
+    []
+  )
+
+  const refreshWorkspace = useCallback(async () => {
+    if (!selectedTeam) return
+    const request = requestId.current
+    try {
+      const data = await loadTeamData(selectedTeam.id)
+      if (request !== requestId.current) return
+      applyLoadedData(data)
+    } catch (refreshError) {
+      if (request !== requestId.current) return
+      setError(getErrorMessage(refreshError))
+    }
+  }, [applyLoadedData, selectedTeam])
+
   useEffect(() => {
     if (!selectedTeam) return
 
@@ -276,38 +329,7 @@ export function TeamWorkspaceProvider({
       .then((data) => {
         if (!data) return
         if (request !== requestId.current) return
-        const {
-          dates,
-          members: apiMembers,
-          scorecard,
-          issues: apiIssues,
-          todos: apiTodos,
-          rocks: apiRocks,
-        } = data
-        const mappedMembers = apiMembers.map(mapMember)
-        const { scores: scoreValues, scoreIds: ids } = makeScoreMaps(
-          scorecard,
-          dates.weeks
-        )
-        setMembers(mappedMembers)
-        setWeeks(dates.weeks)
-        setToday(dates.today)
-        setMeasurables(
-          scorecard.map((measurable) => ({
-            id: measurable.id,
-            name: measurable.name,
-            ownerId: measurable.owner.id,
-            unit: measurable.unit,
-            goal: measurable.goal,
-          }))
-        )
-        setScores(scoreValues)
-        setScoreIds(ids)
-        setIssues(apiIssues.map(mapIssue))
-        setTodos(apiTodos.map(mapTodo))
-        setRocks(apiRocks.map(mapRock))
-        setLoaded(true)
-        setLoading(false)
+        applyLoadedData(data)
       })
       .catch((loadError: unknown) => {
         if (request !== requestId.current) return
@@ -318,7 +340,7 @@ export function TeamWorkspaceProvider({
     return () => {
       requestId.current += 1
     }
-  }, [selectedTeam])
+  }, [applyLoadedData, selectedTeam])
 
   const withMutationError = useCallback(
     async <T,>(action: () => Promise<T>): Promise<T> => {
@@ -338,13 +360,24 @@ export function TeamWorkspaceProvider({
     (measurableId: string, weekStart: string, value: number) =>
       withMutationError(async () => {
         const scoreId = scoreIds[measurableId]?.[weekStart]
-        if (!scoreId) {
-          throw new Error("No saved score exists for that week.")
-        }
-        await updateScoreRequest(selectedTeamId, scoreId, value)
+        const saved = scoreId
+          ? await updateScoreRequest(selectedTeamId, scoreId, value)
+          : await upsertScoreRequest(
+              selectedTeamId,
+              measurableId,
+              weekStart,
+              value
+            )
         setScores((previous) => ({
           ...previous,
           [measurableId]: { ...previous[measurableId], [weekStart]: value },
+        }))
+        setScoreIds((previous) => ({
+          ...previous,
+          [measurableId]: {
+            ...previous[measurableId],
+            [weekStart]: saved.id,
+          },
         }))
       }),
     [scoreIds, selectedTeamId, withMutationError]
@@ -459,6 +492,7 @@ export function TeamWorkspaceProvider({
       loading,
       loaded,
       error,
+      refreshWorkspace,
       measurables,
       weeks,
       today,
@@ -483,6 +517,7 @@ export function TeamWorkspaceProvider({
       loaded,
       members,
       measurables,
+      refreshWorkspace,
       rocks,
       scoreIds,
       scores,
@@ -513,6 +548,7 @@ export function TeamWorkspaceProvider({
           loading: false,
           loaded: false,
           error: "No team is available for this account.",
+          refreshWorkspace: async () => undefined,
           measurables: [],
           weeks: [],
           today: "",

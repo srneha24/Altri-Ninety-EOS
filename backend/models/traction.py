@@ -115,38 +115,44 @@ class Issue(BaseModel):
 
             if key == "measurable_id":
                 dupes = Issue.filter(
+                    team_id=self.team_id,
+                    solved_at__isnull=True,
                     source__contains={
                         key: source_id,
                         "week_start": self.source.get("week_start"),
-                    }
+                    },
                 )
             else:
                 if key == "todo_id" and (
-                    source_obj.done_at or await get_app_today(team_id=self.team_id) < source_obj.due_date
+                    source_obj.done_at
+                    or await get_app_today(team_id=self.team_id) < source_obj.due_date
                 ):
                     raise ValidationError("Only overdue todos can become issues")
                 elif key == "rock_id":
                     if source_obj.status != Rock.Status.OFF_TRACK:
                         raise ValidationError("Only off-track rocks can become issues")
-                    
+
                     rock_milestones = await Milestone.filter(rock_id=source_id)
-                    overdue_milestone_exists = False
-                    for rock_milestone in rock_milestones:
-                        if await get_app_today(team_id=self.team_id) < rock_milestone.due_date:
-                            overdue_milestone_exists = True
-                            break
+                    today = await get_app_today(team_id=self.team_id)
+                    overdue_milestone_exists = any(
+                        not rock_milestone.done and rock_milestone.due_date < today
+                        for rock_milestone in rock_milestones
+                    )
                     if not overdue_milestone_exists:
                         raise ValidationError("Only off-track rocks can become issues")
 
                 dupes = Issue.filter(
+                    team_id=self.team_id,
+                    solved_at__isnull=True,
                     source__contains={
                         key: source_id,
-                    }
+                    },
                 )
-            if self.pk is not None:
-                dupes = dupes.exclude(pk=self.pk)
-            if await dupes.exists():
-                raise ValidationError(f"An issue for this {key} already exists")
+            if self.solved_at is None:
+                if self.pk is not None:
+                    dupes = dupes.exclude(pk=self.pk)
+                if await dupes.exists():
+                    raise ValidationError(f"An issue for this {key} already exists")
 
         return await super().save(using_db, update_fields, force_create, force_update)
 
@@ -183,7 +189,9 @@ class Meeting(BaseModel):
     )
     team = fields.ForeignKeyField("models.Team", related_name="meetings", db_index=True)
 
-    summary: fields.JSONField[dict[str, Any]] = fields.JSONField(default=dict, null=True)
+    summary: fields.JSONField[dict[str, Any]] = fields.JSONField(
+        default=dict, null=True
+    )
 
     class Meta:
         indexes = (("facilitator_id", "team_id"),)
