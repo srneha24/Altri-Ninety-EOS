@@ -2,8 +2,8 @@ from datetime import UTC, datetime, timedelta
 
 from conf.responses import CustomJSONResponse
 from fastapi import HTTPException
-from models import Issue, Measurable, Rock, Score, Todo, User
-from tortoise.exceptions import DoesNotExist
+from models import Issue, Measurable, Membership, Rock, Score, Todo, User
+from tortoise.exceptions import DoesNotExist, ValidationError
 from tortoise.models import Model
 from tortoise.query_utils import Prefetch
 from utils.json_actions import simplify_json
@@ -168,6 +168,12 @@ async def create_issue_view(team_id: str, user_id: str, payload: IssueCreatePayl
             source = await source_model.get(
                 id=existing_issue.source.get(issue_source_key)
             )
+
+            if source.team_id != team_id:
+                raise HTTPException(
+                    detail="source Does Not Belong To Team", status_code=400
+                )
+
             existing_issue.source["title"] = (
                 source.name if issue_source_key == "measurable_id" else source.title
             )
@@ -188,23 +194,30 @@ async def create_issue_view(team_id: str, user_id: str, payload: IssueCreatePayl
             except DoesNotExist:
                 raise HTTPException(detail="source Does Not Exist", status_code=400)
 
-    issue = await Issue.create(
-        title=payload.title,
-        priority=payload.priority,
-        source=payload.source.model_dump(exclude_none=True, exclude_unset=True),
-        owner_id=user_id,
-        team_id=team_id,
-    )
-    await issue.fetch_related("owner")
-    if issue.source:
-        issue.source["title"] = issue.title
+    try:
+        issue = await Issue.create(
+            title=payload.title,
+            priority=payload.priority,
+            source=(
+                payload.source.model_dump(exclude_none=True, exclude_unset=True)
+                if payload.source
+                else None
+            ),
+            owner_id=user_id,
+            team_id=team_id,
+        )
+        await issue.fetch_related("owner")
+        if issue.source:
+            issue.source["title"] = issue.title
 
-    return CustomJSONResponse(
-        content={
-            "data": simplify_json(IssueResponse.model_validate(issue).model_dump())
-        },
-        status_code=201,
-    )
+        return CustomJSONResponse(
+            content={
+                "data": simplify_json(IssueResponse.model_validate(issue).model_dump())
+            },
+            status_code=201,
+        )
+    except ValidationError as e:
+        raise HTTPException(detail=str(e), status_code=400)
 
 
 async def update_issue_view(issue_id: str, payload: IssueUpdatePayload):
@@ -269,7 +282,14 @@ async def get_todos_view(team_id: str, params: TodoParams):
 
 async def create_todo_view(team_id: str, payload: TodoCreatePayload):
     try:
-        await User.get(id=payload.owner_id)
+        user = await User.get(id=payload.owner_id)
+        if user.role == User.Role.OBSERVER:
+            raise HTTPException(detail="Observer Cannot Be owner", status_code=400)
+        elif (
+            user.role == User.Role.TEAM_MEMBER
+            and not await Membership.filter(user=user, team_id=team_id).exists()
+        ):
+            raise HTTPException(detail="owner Does Not Belong To Team", status_code=400)
     except DoesNotExist:
         raise HTTPException(detail="Owner Does Not Exist", status_code=400)
 
@@ -288,7 +308,8 @@ async def create_todo_view(team_id: str, payload: TodoCreatePayload):
     )
     await todo.fetch_related("owner", "source_issue")
     return CustomJSONResponse(
-        content={"data": simplify_json(TodoResponse.model_validate(todo).model_dump())}
+        content={"data": simplify_json(TodoResponse.model_validate(todo).model_dump())},
+        status_code=201,
     )
 
 

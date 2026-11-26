@@ -94,7 +94,7 @@ async def get_todos(
     return await get_todos_view(team_id=team_id, params=params)
 
 
-@router.post("/team/{team_id}/todos", dependencies=[Depends(IsAdminOrTeamMember())])
+@router.post("/teams/{team_id}/todos", dependencies=[Depends(IsAdminOrTeamMember())])
 async def create_todo(
     _request: Request, payload: TodoCreatePayload, team_id: str = Path(...)
 ):

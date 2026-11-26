@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -5,8 +6,8 @@ from tortoise import fields
 from tortoise.exceptions import ValidationError
 from tortoise.validators import MaxValueValidator, MinValueValidator
 
-from .base_db_model import BaseModel, generate_id
-from .custom_db_validators import IssueSourceValidator, WeekStartValidator
+from ._base_db_model import BaseModel, generate_id
+from ._custom_db_validators import IssueSourceValidator, WeekStartValidator
 
 
 class Measurable(BaseModel):
@@ -69,6 +70,9 @@ class Milestone(BaseModel):
 
 
 class Issue(BaseModel):
+    id = fields.CharField(
+        max_length=20, primary_key=True, default=lambda: generate_id("i")
+    )
     title = fields.CharField(max_length=100)
     priority = fields.SmallIntegerField(
         null=True,
@@ -91,7 +95,7 @@ class Issue(BaseModel):
         self, using_db=None, update_fields=None, force_create=False, force_update=False
     ):
         if self.source:
-            source_models = {
+            source_models: dict[str, BaseModel] = {
                 "measurable_id": Measurable,
                 "todo_id": Todo,
                 "rock_id": Rock,
@@ -104,8 +108,10 @@ class Issue(BaseModel):
             )
             source_id = self.source[key]
 
-            if not await source_models[key].filter(id=source_id).exists():
+            source_obj = source_models[key].filter(id=source_id, team_id=self.team_id)
+            if not await source_obj.exists():
                 raise ValidationError(f"{key} does not exist")
+            source_obj = await source_obj.first()
 
             if key == "measurable_id":
                 dupes = Issue.filter(
@@ -115,6 +121,20 @@ class Issue(BaseModel):
                     }
                 )
             else:
+                if key == "todo_id" and (
+                    source_obj.done_at or datetime.now(UTC).date() < source_obj.due_date
+                ):
+                    raise ValidationError("Only overdue todos can become issues")
+                elif key == "rock_id":
+                    rock_milestones = await Milestone.filter(rock_id=source_id)
+                    overdue_milestone_exists = False
+                    for rock_milestone in rock_milestones:
+                        if datetime.now(UTC).date() < rock_milestone.due_date:
+                            overdue_milestone_exists = True
+                            break
+                    if not overdue_milestone_exists:
+                        raise ValidationError("Only off-track rocks can become issues")
+
                 dupes = Issue.filter(
                     source__contains={
                         key: source_id,
@@ -129,6 +149,9 @@ class Issue(BaseModel):
 
 
 class Todo(BaseModel):
+    id = fields.CharField(
+        max_length=20, primary_key=True, default=lambda: generate_id("t")
+    )
     title = fields.CharField(max_length=100)
     due_date = fields.DateField()
     done_at = fields.DateTimeField(null=True)

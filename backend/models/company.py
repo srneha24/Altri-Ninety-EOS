@@ -1,7 +1,7 @@
 from tortoise import fields
 
-from .base_db_model import BaseModel
-from .custom_db_validators import IANATimezoneValidator
+from ._base_db_model import BaseModel
+from ._custom_db_validators import IANATimezoneValidator
 
 
 class Company(BaseModel):
