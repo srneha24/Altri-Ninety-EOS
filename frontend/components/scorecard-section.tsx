@@ -5,6 +5,8 @@ import { AlertCircle, Check, Clock3, PencilLine } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
+import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
+import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 import type { DemoMeasurable, Goal } from "@/lib/demo-data"
 
 type ScorecardSectionProps = {
@@ -77,14 +79,18 @@ function formatWeek(weekStart: string): string {
 export function ScorecardSection({
   title = "Scorecard",
 }: ScorecardSectionProps) {
+  const teamWorkspace = useOptionalTeamWorkspace()
+  const demoWorkspace = useDemoWorkspace()
+  const identity = useWorkspaceIdentity()
   const {
-    role,
     measurables,
     weeks,
     scores,
     updateScore,
     createIssue,
-  } = useDemoWorkspace()
+  } = teamWorkspace ?? demoWorkspace
+  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
+  const members = teamWorkspace?.members ?? []
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState("")
   const [notice, setNotice] = useState("")
@@ -96,7 +102,7 @@ export function ScorecardSection({
     setEditingValue(scores[measurableId]?.[weekStart]?.toString() ?? "")
   }
 
-  function saveScore(
+  async function saveScore(
     event: SubmitEvent<HTMLFormElement>,
     measurableId: string,
     weekStart: string
@@ -104,20 +110,30 @@ export function ScorecardSection({
     event.preventDefault()
     const value = Number(editingValue)
     if (!Number.isFinite(value)) return
-    updateScore(measurableId, weekStart, value)
-    setEditingKey(null)
+    try {
+      await updateScore(measurableId, weekStart, value)
+      setEditingKey(null)
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Unable to update the score."
+      )
+    }
   }
 
-  function makeIssue(measurable: DemoMeasurable, weekStart: string) {
+  async function makeIssue(measurable: DemoMeasurable, weekStart: string) {
     const weekLabel = formatWeek(weekStart)
-    const issue = createIssue(
-      `${measurable.name} — week of ${weekLabel}`,
-      3,
-      { measurableId: measurable.id, weekStart }
-    )
-    setNotice(
-      `“${issue.title}” is on the Issues list.`
-    )
+    try {
+      const issue = await createIssue(
+        `${measurable.name} — week of ${weekLabel}`,
+        3,
+        { measurableId: measurable.id, weekStart }
+      )
+      setNotice(`“${issue.title}” is on the Issues list.`)
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Unable to create the Issue."
+      )
+    }
   }
 
   return (
@@ -207,7 +223,8 @@ export function ScorecardSection({
                   </span>
                   <span className="mt-1 block text-[11px] font-normal text-[#b0a49b]">
                     Owner:{" "}
-                    {demoOwnerName(measurable.ownerId)}
+                    {members.find((member) => member.id === measurable.ownerId)
+                      ?.name ?? demoOwnerName(measurable.ownerId)}
                   </span>
                 </th>
                 {weeks.map((week) => {
@@ -220,6 +237,10 @@ export function ScorecardSection({
                   )
                   const key = `${measurable.id}:${week}`
                   const isEditing = editingKey === key
+                  const canEditScore =
+                    canEdit &&
+                    (!teamWorkspace ||
+                      Boolean(teamWorkspace.scoreIds[measurable.id]?.[week]))
                   return (
                     <td className="px-1.5 py-2 text-center align-top" key={week}>
                       {isEditing ? (
@@ -261,22 +282,24 @@ export function ScorecardSection({
                         <>
                           <button
                             aria-label={
-                              canEdit
+                              canEditScore
                                 ? `Edit ${measurable.name}, week of ${formatWeek(week)}`
                                 : `${measurable.name}, week of ${formatWeek(week)}`
                             }
                             className={`mx-auto inline-flex min-h-8 min-w-12 items-center justify-center gap-1 rounded-md px-2 text-xs font-semibold ${
-                              canEdit
+                              canEditScore
                                 ? "hover:ring-1 hover:ring-[#e7ded6]"
                                 : "cursor-default"
                             } ${statusStyle(status)}`}
-                            disabled={!canEdit}
-                            onClick={() => beginEdit(measurable.id, week)}
-                            title={canEdit ? "Edit score" : undefined}
+                            disabled={!canEditScore}
+                            onClick={() => {
+                              if (canEditScore) beginEdit(measurable.id, week)
+                            }}
+                            title={canEditScore ? "Edit score" : undefined}
                             type="button"
                           >
                             {score === null ? "—" : score}
-                            {canEdit ? (
+                            {canEditScore ? (
                               <PencilLine
                                 aria-hidden="true"
                                 className="size-2.5 opacity-50"
@@ -294,7 +317,7 @@ export function ScorecardSection({
                           {canEdit && status === "off_track" ? (
                             <button
                               className="mt-1 max-w-[74px] text-[9px] leading-3 font-semibold text-[#a64e16] underline decoration-[#e9c2a5] underline-offset-2 hover:text-[#873e10]"
-                              onClick={() => makeIssue(measurable, week)}
+                              onClick={() => void makeIssue(measurable, week)}
                               type="button"
                             >
                               Make it an Issue
@@ -311,8 +334,9 @@ export function ScorecardSection({
         </table>
       </div>
       <p className="border-t border-[#f1ebe6] px-5 py-3 text-[11px] text-[#91867e] sm:px-6">
-        Last save wins in this local demo. Closed weeks without a score are off
-        track; an unscored current week is pending.
+        {teamWorkspace
+          ? "Scores are saved to the team workspace. Closed weeks without a score are off track; an unscored current week is pending."
+          : "Last save wins in this local demo. Closed weeks without a score are off track; an unscored current week is pending."}
       </p>
     </section>
   )

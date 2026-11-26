@@ -5,13 +5,24 @@ import { Check, Circle, Clock3, Undo2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
+import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
 import { DEMO_TODAY, DEMO_USERS } from "@/lib/demo-data"
+import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 
 const LAST_CLOSED_WEEK_START = "2026-11-16"
 const LAST_CLOSED_WEEK_END = "2026-11-22"
 
-function todoOwnerName(ownerId: string): string {
-  return DEMO_USERS.find((user) => user.id === ownerId)?.name ?? "Unknown owner"
+function todoOwnerName(
+  ownerId: string,
+  members: { id: string; name: string }[]
+): string {
+  return members.find((user) => user.id === ownerId)?.name ?? "Unknown owner"
+}
+
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T12:00:00Z`)
+  value.setUTCDate(value.getUTCDate() + days)
+  return value.toISOString().slice(0, 10)
 }
 
 function shortDate(date: string): string {
@@ -23,24 +34,50 @@ function shortDate(date: string): string {
   })
 }
 
+function companyDate(timestamp: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(timestamp))
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value])
+  )
+  return `${values.year}-${values.month}-${values.day}`
+}
+
 export function TodosSection() {
-  const { todos, issues, role, toggleTodo } = useDemoWorkspace()
+  const teamWorkspace = useOptionalTeamWorkspace()
+  const demoWorkspace = useDemoWorkspace()
+  const identity = useWorkspaceIdentity()
+  const { todos, issues, toggleTodo } = teamWorkspace ?? demoWorkspace
+  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
+  const members = teamWorkspace?.members ?? DEMO_USERS
+  const today = teamWorkspace?.today ?? DEMO_TODAY
+  const currentWeek = teamWorkspace?.weeks[teamWorkspace.weeks.length - 1]
+  const lastClosedWeekStart = currentWeek
+    ? addDays(currentWeek, -7)
+    : LAST_CLOSED_WEEK_START
+  const lastClosedWeekEnd = teamWorkspace
+    ? addDays(lastClosedWeekStart, 6)
+    : LAST_CLOSED_WEEK_END
   const canWrite = role !== "observer"
 
   const completion = useMemo(() => {
     const dueLastWeek = todos.filter(
       (todo) =>
-        todo.dueDate >= LAST_CLOSED_WEEK_START &&
-        todo.dueDate <= LAST_CLOSED_WEEK_END
+        todo.dueDate >= lastClosedWeekStart &&
+        todo.dueDate <= lastClosedWeekEnd
     )
     if (dueLastWeek.length === 0) return null
     const doneByEnd = dueLastWeek.filter(
       (todo) =>
         todo.doneAt !== null &&
-        todo.doneAt.slice(0, 10) <= LAST_CLOSED_WEEK_END
+        companyDate(todo.doneAt) <= lastClosedWeekEnd
     ).length
     return Math.floor((doneByEnd / dueLastWeek.length) * 100 + 0.5)
-  }, [todos])
+  }, [lastClosedWeekEnd, lastClosedWeekStart, todos])
 
   return (
     <section
@@ -61,7 +98,7 @@ export function TodosSection() {
         </div>
         <div className="rounded-xl bg-[#fcfaf8] px-3.5 py-2.5">
           <p className="text-[10px] font-medium tracking-wide text-[#91867e] uppercase">
-            Last closed week · Nov 16–22
+            Last closed week · {shortDate(lastClosedWeekStart)}–{shortDate(lastClosedWeekEnd)}
           </p>
           <p className="mt-0.5 text-sm font-semibold text-[#30261f]">
             {completion === null ? "No To-Dos due" : `${completion}% complete`}
@@ -80,7 +117,7 @@ export function TodosSection() {
 
       <div className="divide-y divide-[#f5f0ec]">
         {todos.map((todo) => {
-          const overdue = !todo.doneAt && todo.dueDate < DEMO_TODAY
+          const overdue = !todo.doneAt && todo.dueDate < today
           const linkedIssue = todo.issueId
             ? issues.find((issue) => issue.id === todo.issueId)?.title ?? null
             : null
@@ -110,7 +147,7 @@ export function TodosSection() {
                     {todo.title}
                   </p>
                   <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#91867e]">
-                    <span>Owner: {todoOwnerName(todo.ownerId)}</span>
+                    <span>Owner: {todoOwnerName(todo.ownerId, members)}</span>
                     <span aria-hidden="true">·</span>
                     <span
                       className={`inline-flex items-center gap-1 ${
@@ -126,7 +163,7 @@ export function TodosSection() {
                     {todo.doneAt ? (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span>Done {shortDate(todo.doneAt.slice(0, 10))}</span>
+                        <span>Done {shortDate(companyDate(todo.doneAt))}</span>
                       </>
                     ) : null}
                   </p>
@@ -145,7 +182,11 @@ export function TodosSection() {
                       : `Mark done: ${todo.title}`
                   }
                   className="h-8 shrink-0 self-start rounded-lg border-[#e7ded6] text-xs text-[#6f5140] sm:self-center"
-                  onClick={() => toggleTodo(todo.id)}
+                  onClick={() => {
+                    void Promise.resolve()
+                      .then(() => toggleTodo(todo.id))
+                      .catch(() => undefined)
+                  }}
                   size="sm"
                   type="button"
                   variant="outline"

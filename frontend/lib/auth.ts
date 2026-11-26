@@ -1,3 +1,5 @@
+import { apiRequest } from "@/lib/api-client"
+
 const ACCESS_TOKEN_KEY = "altri.auth.access"
 const REFRESH_TOKEN_KEY = "altri.auth.refresh"
 
@@ -28,14 +30,14 @@ export function clearTokens(): void {
 export async function loginWithEmail(email: string): Promise<void> {
   const normalizedEmail = email.trim().toLowerCase()
   if (!normalizedEmail) {
-    throw new Error("Enter a placeholder account email.")
+    throw new Error("Enter your seeded account email.")
   }
 
-  saveTokens({
-    access_token: `demo-access-${normalizedEmail}`,
-    refresh_token: `demo-refresh-${normalizedEmail}`,
-    token_type: "bearer",
+  const response = await apiRequest<{ token: AuthTokens }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: normalizedEmail }),
   })
+  saveTokens(response.token)
 }
 
 export async function refreshSession(): Promise<AuthTokens> {
@@ -44,11 +46,10 @@ export async function refreshSession(): Promise<AuthTokens> {
     throw new Error("Your session has expired. Please sign in.")
   }
 
-  const tokens: AuthTokens = {
-    access_token: refreshToken.replace("demo-refresh-", "demo-access-"),
-    refresh_token: refreshToken,
-    token_type: "bearer",
-  }
-  saveTokens(tokens)
-  return tokens
+  const response = await apiRequest<{ token: AuthTokens }>("/auth/refresh", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  })
+  saveTokens(response.token)
+  return response.token
 }

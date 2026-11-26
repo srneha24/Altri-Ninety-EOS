@@ -1,7 +1,7 @@
 from conf.responses import CustomJSONResponse
 from fastapi import HTTPException
 from jwt import InvalidTokenError
-from models import Membership, User
+from models import Membership, Team, User
 from tortoise.exceptions import DoesNotExist
 from utils.log import Log
 from utils.tokens import decode_token, get_tokens
@@ -38,5 +38,28 @@ async def refresh_session_view(payload: RefreshPayload):
 
 
 async def get_user_teams_view(user_id: str):
-    teams = await Membership.filter(user_id=user_id).values_list("team_id", flat=True)
+    user = await User.get(id=user_id)
+    if user.role == User.Role.ADMIN:
+        teams = await Team.all().values("id", "name")
+    else:
+        teams = await Membership.filter(user_id=user_id).values(
+            id="team__id", name="team__name"
+        )
     return CustomJSONResponse(content={"teams": teams})
+
+
+async def get_current_user_view(user_id: str):
+    try:
+        user = await User.get(id=user_id)
+    except DoesNotExist:
+        raise HTTPException(detail="User not found", status_code=404)
+
+    return CustomJSONResponse(
+        content={
+            "data": {
+                "id": user.id,
+                "name": user.name,
+                "role": user.role.value,
+            }
+        }
+    )

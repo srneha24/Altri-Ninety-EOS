@@ -6,9 +6,11 @@ async def get_team_members_view(team_id: str):
     members = (
         await Membership.filter(team_id=team_id)
         .select_related("user")
-        .values(id="user__id", name="user__name")
+        .values(id="user__id", name="user__name", role="user__role")
     )
-    admins = await User.filter(role=User.Role.ADMIN).values(id="id", name="name")
+    admins = await User.filter(role=User.Role.ADMIN).values(
+        id="id", name="name", role="role"
+    )
     members_by_id = {member["id"]: member for member in members}
     members_by_id.update({admin["id"]: admin for admin in admins})
 

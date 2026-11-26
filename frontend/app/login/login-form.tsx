@@ -6,6 +6,7 @@ import { ArrowRight, LoaderCircle, LockKeyhole, Mail } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
+  clearTokens,
   getAccessToken,
   getRefreshToken,
   loginWithEmail,
@@ -41,6 +42,7 @@ export default function LoginForm({ sessionExpired }: LoginFormProps) {
           }
         } catch {
           if (active) {
+            clearTokens()
             setError("Your session has expired. Sign in again to continue.")
           }
         }

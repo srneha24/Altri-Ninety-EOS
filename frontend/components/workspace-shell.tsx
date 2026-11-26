@@ -12,9 +12,11 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { SelectMenu } from "@/components/ui/select-menu"
-import { useDemoWorkspace } from "@/components/demo-workspace-provider"
+import { TeamWorkspaceProvider } from "@/components/team-workspace-provider"
+import { getCurrentUser, getUserTeams, type ApiUser } from "@/lib/api"
 import { clearTokens, getRefreshToken, refreshSession } from "@/lib/auth"
-import type { DemoRole } from "@/lib/demo-data"
+import type { DemoRole, DemoTeam, DemoUser } from "@/lib/demo-data"
+import { WorkspaceIdentityProvider } from "@/lib/workspace-identity"
 
 type WorkspaceShellProps = {
   activePage: "team" | "meeting"
@@ -27,6 +29,19 @@ const roleLabels: Record<DemoRole, string> = {
   observer: "Observer",
 }
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join("")
+}
+
+function mapUser(user: ApiUser): DemoUser {
+  return { ...user, initials: initials(user.name) }
+}
+
 export function WorkspaceShell({
   activePage,
   children,
@@ -34,33 +49,64 @@ export function WorkspaceShell({
   const router = useRouter()
   const pathname = usePathname()
   const [isReady, setIsReady] = useState(false)
-  const {
-    currentUser,
-    role,
-    setRole,
-    teams,
-    selectedTeamId,
-    selectedTeam,
-    setSelectedTeamId,
-  } = useDemoWorkspace()
+  const [currentUser, setCurrentUser] = useState<DemoUser | null>(null)
+  const [teams, setTeams] = useState<DemoTeam[]>([])
+  const [selectedTeamId, setSelectedTeamId] = useState("")
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const selectedTeam = teams.find((team) => team.id === selectedTeamId)
+  const role = currentUser?.role ?? "team_member"
 
   useEffect(() => {
     let active = true
 
     async function restoreSession() {
       if (!getRefreshToken()) {
+        clearTokens()
         router.replace("/login")
         return
       }
 
       try {
         await refreshSession()
-        if (active) {
-          setIsReady(true)
-        }
       } catch {
         if (active) {
+          clearTokens()
           router.replace("/login?session=expired")
+        }
+        return
+      }
+
+      try {
+        const [user, availableTeams] = await Promise.all([
+          getCurrentUser(),
+          getUserTeams(),
+        ])
+        if (active) {
+          setCurrentUser(mapUser(user))
+          setTeams(
+            availableTeams.map((team) => ({
+              ...team,
+              memberIds: [],
+            }))
+          )
+          setSelectedTeamId((previous) =>
+            availableTeams.some((team) => team.id === previous)
+              ? previous
+              : availableTeams[0]?.id ?? ""
+          )
+          setWorkspaceError(
+            availableTeams.length
+              ? null
+              : "This account does not have access to a team."
+          )
+          setIsReady(true)
+        }
+      } catch (error) {
+        if (active) {
+          setWorkspaceError(
+            error instanceof Error ? error.message : "Unable to load workspace."
+          )
+          setIsReady(true)
         }
       }
     }
@@ -80,6 +126,38 @@ export function WorkspaceShell({
   if (!isReady) {
     return <main className="min-h-svh bg-[#faf8f6]" />
   }
+
+  if (!currentUser) {
+    return (
+      <main className="grid min-h-svh place-items-center bg-[#faf8f6] p-6">
+        <p
+          aria-live="polite"
+          className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+          role="alert"
+        >
+          {workspaceError ?? "Unable to load your account."}
+        </p>
+      </main>
+    )
+  }
+
+  const pageContent =
+    activePage === "team" && currentUser && selectedTeamId ? (
+      <TeamWorkspaceProvider
+        selectedTeamId={selectedTeamId}
+        teams={teams}
+        user={currentUser}
+      >
+        {children}
+      </TeamWorkspaceProvider>
+    ) : (
+      children
+    )
+  const workspaceContent = (
+    <WorkspaceIdentityProvider user={currentUser}>
+      {pageContent}
+    </WorkspaceIdentityProvider>
+  )
 
   return (
     <div className="min-h-svh bg-[#faf8f6] md:pl-64">
@@ -178,7 +256,7 @@ export function WorkspaceShell({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            {activePage === "team" && teams.length > 1 ? (
               <label className="flex items-center gap-2 text-xs font-medium text-[#756d67]">
                 Team
                 <SelectMenu
@@ -192,35 +270,32 @@ export function WorkspaceShell({
                   value={selectedTeamId}
                 />
               </label>
-
-              <label className="flex items-center gap-2 text-xs font-medium text-[#756d67]">
-                Preview role
-                <SelectMenu
-                  ariaLabel="Preview role"
-                  className="h-10 min-w-28 rounded-lg px-3 text-sm"
-                  onChange={(value) => setRole(value as DemoRole)}
-                  options={Object.entries(roleLabels).map(([value, label]) => ({
-                    value,
-                    label,
-                  }))}
-                  value={role}
-                />
-              </label>
-            </div>
+            ) : activePage === "team" && selectedTeam ? (
+              <span className="rounded-full bg-[#fff9f3] px-3 py-2 text-xs font-medium text-[#9b4d18]">
+                {selectedTeam.name}
+              </span>
+            ) : null}
           </div>
         </header>
 
         <div className="mx-auto max-w-[1500px] px-5 py-7 sm:px-8 lg:px-10">
-          <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-[#f0dfd1] bg-[#fff9f3] px-4 py-3 text-xs text-[#8a5836]">
-            <span>
-              <strong className="font-semibold">Demo workspace.</strong>{" "}
-              Placeholder data and actions are local to this browser.
-            </span>
-            <span className="hidden rounded-full bg-white px-2.5 py-1 font-medium text-[#9b4d18] sm:inline-flex">
-              {selectedTeam.name}
-            </span>
-          </div>
-          {children}
+          {workspaceError ? (
+            <p
+              aria-live="polite"
+              className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"
+              role="alert"
+            >
+              {workspaceError}
+            </p>
+          ) : activePage === "meeting" ? (
+            <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-[#f0dfd1] bg-[#fff9f3] px-4 py-3 text-xs text-[#8a5836]">
+              <span>
+                <strong className="font-semibold">Demo meeting.</strong>{" "}
+                Meeting actions are local to this browser.
+              </span>
+            </div>
+          ) : null}
+          {workspaceError ? null : workspaceContent}
         </div>
       </main>
     </div>

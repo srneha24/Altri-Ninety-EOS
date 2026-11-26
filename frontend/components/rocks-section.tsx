@@ -3,10 +3,14 @@
 import { ChevronDown, Flag, Milestone } from "lucide-react"
 
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
+import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
 import { DEMO_TODAY, DEMO_USERS } from "@/lib/demo-data"
 
-function ownerName(ownerId: string): string {
-  return DEMO_USERS.find((user) => user.id === ownerId)?.name ?? "Unknown owner"
+function ownerName(
+  ownerId: string,
+  members: { id: string; name: string }[]
+): string {
+  return members.find((user) => user.id === ownerId)?.name ?? "Unknown owner"
 }
 
 function dateLabel(date: string): string {
@@ -19,7 +23,11 @@ function dateLabel(date: string): string {
 }
 
 export function RocksSection() {
-  const { rocks } = useDemoWorkspace()
+  const teamWorkspace = useOptionalTeamWorkspace()
+  const demoWorkspace = useDemoWorkspace()
+  const { rocks } = teamWorkspace ?? demoWorkspace
+  const members = teamWorkspace?.members ?? DEMO_USERS
+  const today = teamWorkspace?.today ?? DEMO_TODAY
 
   return (
     <section
@@ -59,7 +67,7 @@ export function RocksSection() {
                   (completedCount / rock.milestones.length) * 100 + 0.5
                 )
           const hasOverdueMilestone = rock.milestones.some(
-            (milestone) => !milestone.done && milestone.dueDate < DEMO_TODAY
+            (milestone) => !milestone.done && milestone.dueDate < today
           )
           const status =
             rock.seededStatus === "complete"
@@ -85,7 +93,7 @@ export function RocksSection() {
                     {rock.title}
                   </span>
                   <span className="mt-1 block text-[11px] text-[#91867e]">
-                    Owner: {ownerName(rock.ownerId)} · {completedCount}/
+                    Owner: {ownerName(rock.ownerId, members)} · {completedCount}/
                     {rock.milestones.length} milestones
                   </span>
                 </span>
@@ -142,7 +150,7 @@ export function RocksSection() {
                         </span>
                         <span
                           className={`shrink-0 text-[11px] ${
-                            !milestone.done && milestone.dueDate < DEMO_TODAY
+                            !milestone.done && milestone.dueDate < today
                               ? "font-medium text-rose-700"
                               : "text-[#91867e]"
                           }`}

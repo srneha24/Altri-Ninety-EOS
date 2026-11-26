@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
 import { IssuesSection } from "@/components/issues-section"
 import { ScorecardSection, getScoreStatus } from "@/components/scorecard-section"
+import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 import {
   DEMO_USERS,
   MEETING_AGENDA,
@@ -44,8 +45,9 @@ function formatTimestamp(value: string): string {
 }
 
 export function MeetingPage() {
+  const demoWorkspace = useDemoWorkspace()
+  const identity = useWorkspaceIdentity()
   const {
-    role,
     currentUser,
     meeting,
     startMeeting,
@@ -59,7 +61,8 @@ export function MeetingPage() {
     issues,
     todos,
     endedMeetings,
-  } = useDemoWorkspace()
+  } = demoWorkspace
+  const role = identity?.role ?? demoWorkspace.role
   const [now, setNow] = useState(0)
   const [selectedEndedMeetingId, setSelectedEndedMeetingId] = useState<string | null>(null)
   const section = meeting

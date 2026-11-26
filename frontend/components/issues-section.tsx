@@ -6,14 +6,19 @@ import { AlertTriangle, Check, ChevronDown, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { SelectMenu } from "@/components/ui/select-menu"
 import { useDemoWorkspace } from "@/components/demo-workspace-provider"
+import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
 import { DEMO_MEASURABLES, DEMO_USERS, type DemoIssue } from "@/lib/demo-data"
+import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 
 type IssuesSectionProps = {
   title?: string
 }
 
-function displayName(userId: string): string {
-  return DEMO_USERS.find((user) => user.id === userId)?.name ?? "Unknown owner"
+function displayName(
+  userId: string,
+  members: { id: string; name: string }[] = DEMO_USERS
+): string {
+  return members.find((user) => user.id === userId)?.name ?? "Unknown owner"
 }
 
 function formatCreatedAt(value: string): string {
@@ -22,12 +27,16 @@ function formatCreatedAt(value: string): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "America/Chicago",
   })
 }
 
-function sourceDescription(issue: DemoIssue): string | null {
+function sourceDescription(
+  issue: DemoIssue,
+  measurables = DEMO_MEASURABLES
+): string | null {
   if (!issue.source) return null
-  const measurable = DEMO_MEASURABLES.find(
+  const measurable = measurables.find(
     (item) => item.id === issue.source?.measurableId
   )
   const date = new Date(`${issue.source.weekStart}T12:00:00Z`)
@@ -38,13 +47,16 @@ function sourceDescription(issue: DemoIssue): string | null {
 }
 
 function IssueCard({ issue }: { issue: DemoIssue }) {
+  const teamWorkspace = useOptionalTeamWorkspace()
+  const demoWorkspace = useDemoWorkspace()
+  const identity = useWorkspaceIdentity()
   const {
-    role,
     selectedTeam,
     updateIssuePriority,
     solveIssue,
     addTodo,
-  } = useDemoWorkspace()
+  } = teamWorkspace ?? demoWorkspace
+  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
   const [resolutionNote, setResolutionNote] = useState("")
   const [todoTitle, setTodoTitle] = useState("")
   const [todoOwnerId, setTodoOwnerId] = useState("")
@@ -52,30 +64,44 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
   const [showSolveForm, setShowSolveForm] = useState(false)
   const [notice, setNotice] = useState("")
   const canWrite = role !== "observer"
-  const owners = DEMO_USERS.filter(
+  const members = teamWorkspace?.members ?? DEMO_USERS
+  const measurables = teamWorkspace?.measurables ?? DEMO_MEASURABLES
+  const owners = members.filter(
     (user) =>
       user.role !== "observer" && selectedTeam.memberIds.includes(user.id)
   )
   const isSolved = Boolean(issue.solvedAt)
 
-  function handleSolve(event: SubmitEvent<HTMLFormElement>) {
+  async function handleSolve(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const note = resolutionNote.trim()
     if (!note) return
-    solveIssue(issue.id, note)
-    setShowSolveForm(false)
-    setNotice("Issue solved.")
+    try {
+      await solveIssue(issue.id, note)
+      setShowSolveForm(false)
+      setNotice("Issue solved.")
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Unable to solve the Issue."
+      )
+    }
   }
 
-  function handleAddTodo(event: SubmitEvent<HTMLFormElement>) {
+  async function handleAddTodo(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const title = todoTitle.trim()
     const ownerId = todoOwnerId || owners[0]?.id
     if (!title || !ownerId) return
-    const todo = addTodo(title, ownerId, issue.id)
-    setTodoTitle("")
-    setShowTodoForm(false)
-    setNotice(`To-Do added · due ${todo.dueDate}.`)
+    try {
+      const todo = await addTodo(title, ownerId, issue.id)
+      setTodoTitle("")
+      setShowTodoForm(false)
+      setNotice(`To-Do added · due ${todo.dueDate}.`)
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Unable to add the To-Do."
+      )
+    }
   }
 
   return (
@@ -98,9 +124,9 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
             <span className="px-1.5 text-[#d3c7be]">·</span>
             Created {formatCreatedAt(issue.createdAt)}
           </p>
-          {sourceDescription(issue) ? (
+          {sourceDescription(issue, measurables) ? (
             <p className="mt-1 text-[11px] text-[#9b4d18]">
-              Source: {sourceDescription(issue)}
+              Source: {sourceDescription(issue, measurables)}
             </p>
           ) : null}
         </div>
@@ -110,9 +136,17 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
             ariaLabel={`Priority for ${issue.title}`}
             className="h-8 min-w-28 rounded-lg px-2 text-xs"
             disabled={!canWrite || isSolved}
-            onChange={(value) =>
-              updateIssuePriority(issue.id, value ? Number(value) : null)
-            }
+            onChange={(value) => {
+              void Promise.resolve(
+                updateIssuePriority(issue.id, value ? Number(value) : null)
+              ).catch((error: unknown) =>
+                setNotice(
+                  error instanceof Error
+                    ? error.message
+                    : "Unable to update the Issue."
+                )
+              )
+            }}
             options={[
               { value: "", label: "No priority" },
               ...[5, 4, 3, 2, 1].map((priority) => ({
@@ -233,7 +267,12 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
 }
 
 export function IssuesSection({ title = "Issues" }: IssuesSectionProps) {
-  const { currentUser, role, issues, createIssue } = useDemoWorkspace()
+  const teamWorkspace = useOptionalTeamWorkspace()
+  const demoWorkspace = useDemoWorkspace()
+  const identity = useWorkspaceIdentity()
+  const { currentUser, issues, createIssue } = teamWorkspace ?? demoWorkspace
+  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
+  const members = teamWorkspace?.members ?? DEMO_USERS
   const [showSolved, setShowSolved] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newTitle, setNewTitle] = useState("")
@@ -256,17 +295,25 @@ export function IssuesSection({ title = "Issues" }: IssuesSectionProps) {
     [issues, showSolved]
   )
 
-  function handleCreateIssue(event: SubmitEvent<HTMLFormElement>) {
+  async function handleCreateIssue(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
     const title = newTitle.trim()
     if (!title) return
     const priority = newPriority === "" ? null : Number(newPriority)
-    const issue = createIssue(title, priority)
-    setNewTitle("")
-    setShowCreateForm(false)
-    setNotice(`Issue added and assigned to ${displayName(currentUser.id)}.`)
-    if (issue.solvedAt) {
-      setShowSolved(true)
+    try {
+      const issue = await createIssue(title, priority)
+      setNewTitle("")
+      setShowCreateForm(false)
+      setNotice(
+        `Issue added and assigned to ${displayName(currentUser.id, members)}.`
+      )
+      if (issue.solvedAt) {
+        setShowSolved(true)
+      }
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : "Unable to create the Issue."
+      )
     }
   }
 
