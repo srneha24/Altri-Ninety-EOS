@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import jwt
-from conf.app_vars import ACCESS_TTL, JWT_ALGO, JWT_SECRET, REFRESH_TTL
+from conf.settings import ACCESS_TTL, JWT_ALGO, JWT_SECRET, REFRESH_TTL
 
 
 def _create_token(sub: str, token_type: str, ttl: timedelta) -> str:

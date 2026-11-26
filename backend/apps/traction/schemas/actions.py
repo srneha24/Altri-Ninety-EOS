@@ -21,6 +21,7 @@ class ScorecardParams(BaseModel):
 ScoreResponse = pydantic_model_creator(
     Score, name="ScoreResponse", exclude=("measurable", "mesurable_id")
 )
+_OwnerResponse = pydantic_model_creator(User, name="Owner", include=("id", "name"))
 
 
 class ScorecardResponse(BaseModel):
@@ -30,6 +31,7 @@ class ScorecardResponse(BaseModel):
     name: str
     unit: str
     goal: dict[str, Any]
+    owner: _OwnerResponse  # type: ignore
     scores: list[ScoreResponse]  # type: ignore
     created_at: datetime
     updated_at: datetime
@@ -56,8 +58,6 @@ class IssuesParams(BaseModel):
     owner_id: str | None = Field(None)
     order_by: OrderBy = Field(OrderBy.PRIORITY_DESC)
 
-
-_OwnerResponse = pydantic_model_creator(User, name="Owner", include=("id", "name"))
 
 _IssueResponseBase = pydantic_model_creator(
     Issue, name="IssueResponseBase", exclude=("team", "team_id", "source", "todos")
@@ -158,7 +158,7 @@ class TodoUpdatePayload(BaseModel):
     done: bool = Field(...)
 
 
-class RockParams(BaseModel):
+class QuarterlyRockParams(BaseModel):
     quarter: str = Field(..., pattern=r"^\d{4}-Q[1-4]$")
     status: Rock.Status | None = Field(None)
     owner_id: str | None = Field(None)

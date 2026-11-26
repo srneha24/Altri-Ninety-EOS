@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
+from apps.traction.utils import build_meeting_summary
 from conf.database import TORTOISE_ORM
 from models import (
     Company,
@@ -103,9 +104,7 @@ async def seed_keyed_record(
             id=identifier, **defaults, updated_at=datetime.now(UTC)
         )
         if updated != 1:
-            raise RuntimeError(
-                f"Failed to re-key {model.__name__} row {previous_id!r}"
-            )
+            raise RuntimeError(f"Failed to re-key {model.__name__} row {previous_id!r}")
         stats[model.__name__]["updated"] += 1
         return
 
@@ -288,6 +287,20 @@ async def seed_records(seed: dict[str, Any], stats: dict[str, dict[str, int]]) -
                 },
                 stats,
             )
+
+    for team_id in {meeting["team_id"] for meeting in seed["meetings"]}:
+        seeded_meetings = (
+            await Meeting.filter(
+                team_id=team_id,
+                id__in=[meeting["id"] for meeting in seed["meetings"]],
+                ended_at__isnull=False,
+            )
+            .select_related("facilitator", "team")
+            .order_by("ended_at")
+        )
+        for meeting in seeded_meetings:
+            meeting.summary = await build_meeting_summary(meeting)
+            await meeting.save(update_fields=["summary"])
 
 
 async def seed_database(seed_path: Path) -> None:

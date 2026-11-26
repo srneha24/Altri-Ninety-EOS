@@ -45,7 +45,7 @@ class Score(BaseModel):
 class Rock(BaseModel):
     class Status(str, Enum):
         ON_TRACK = "on_track"
-        OFF_TRACT = "off_track"
+        OFF_TRACK = "off_track"
         COMPLETE = "complete"
 
     title = fields.CharField(max_length=100)
@@ -126,6 +126,9 @@ class Issue(BaseModel):
                 ):
                     raise ValidationError("Only overdue todos can become issues")
                 elif key == "rock_id":
+                    if source_obj.status != Rock.Status.OFF_TRACK:
+                        raise ValidationError("Only off-track rocks can become issues")
+                    
                     rock_milestones = await Milestone.filter(rock_id=source_id)
                     overdue_milestone_exists = False
                     for rock_milestone in rock_milestones:
@@ -167,13 +170,20 @@ class Todo(BaseModel):
 
 
 class Meeting(BaseModel):
-    started_at = fields.DateTimeField()
-    ended_at = fields.DateTimeField(null=True)
+    id = fields.CharField(
+        max_length=20, primary_key=True, default=lambda: generate_id("mt")
+    )
+    started_at = fields.DateTimeField(db_index=True)
+    ids_started_at = fields.DateTimeField(null=True, db_index=True)
+    conclude_started_at = fields.DateTimeField(null=True, db_index=True)
+    ended_at = fields.DateTimeField(null=True, db_index=True)
 
     facilitator = fields.ForeignKeyField(
         "models.User", related_name="meeting_facilitations", db_index=True
     )
     team = fields.ForeignKeyField("models.Team", related_name="meetings", db_index=True)
+
+    summary: fields.JSONField[dict[str, Any]] = fields.JSONField(default=dict, null=True)
 
     class Meta:
         indexes = (("facilitator_id", "team_id"),)
@@ -184,6 +194,7 @@ class MeetingAttendee(BaseModel):
         max_length=20, primary_key=True, default=lambda: generate_id("att")
     )
 
+    joined_at = fields.DateTimeField(null=True, default=None, db_index=True)
     rating = fields.SmallIntegerField(
         null=True, validators=[MinValueValidator(1), MaxValueValidator(10)]
     )
@@ -192,3 +203,6 @@ class MeetingAttendee(BaseModel):
     meeting = fields.ForeignKeyField(
         "models.Meeting", related_name="attendees", db_index=True
     )
+
+    class Meta:
+        unique_together = (("user_id", "meeting_id"),)

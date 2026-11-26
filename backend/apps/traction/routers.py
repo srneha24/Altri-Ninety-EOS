@@ -1,13 +1,15 @@
 from typing import Annotated
 
 from conf.permissions import HasAccessToTeam, IsAdminOrTeamMember
-from fastapi import APIRouter, Depends, Path, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Path, Query, Request
 
 from .schemas import (
     IssueCreatePayload,
     IssuesParams,
     IssueUpdatePayload,
-    RockParams,
+    MeetingRatingPayload,
+    MeetingStatePayload,
+    QuarterlyRockParams,
     ScorecardParams,
     ScoreUpdatePayload,
     TodoCreatePayload,
@@ -17,10 +19,19 @@ from .schemas import (
 from .views import (
     create_issue_view,
     create_todo_view,
+    get_active_meeting_view,
     get_issues_view,
+    get_meeting_attendees_view,
+    get_meeting_events_view,
+    get_meeting_summary_view,
+    get_meeting_view,
     get_quarterly_rocks_view,
     get_scorecard_view,
     get_todos_view,
+    join_meeting_view,
+    list_meeting_summaries_view,
+    meeting_state_view,
+    rate_meeting_view,
     update_issue_view,
     update_measurable_score_view,
     update_todo_view,
@@ -115,6 +126,80 @@ async def update_todo(
 
 @router.get("/teams/{team_id}/quarterly-rocks")
 async def get_quarterly_rocks(
-    _request: Request, params: Annotated[RockParams, Query()], team_id: str = Path(...)
+    _request: Request,
+    params: Annotated[QuarterlyRockParams, Query()],
+    team_id: str = Path(...),
 ):
     return await get_quarterly_rocks_view(team_id=team_id, params=params)
+
+
+@router.post(
+    "/teams/{team_id}/meetings/state", dependencies=[Depends(IsAdminOrTeamMember())]
+)
+async def meeting_state(
+    request: Request,
+    payload: MeetingStatePayload,
+    background_tasks: BackgroundTasks,
+    team_id: str = Path(...),
+):
+    return await meeting_state_view(
+        user_id=request.state.user,
+        team_id=team_id,
+        payload=payload,
+        background_tasks=background_tasks,
+    )
+
+
+@router.get("/teams/{team_id}/meetings/summaries")
+async def list_meeting_summaries(_request: Request, team_id: str = Path(...)):
+    return await list_meeting_summaries_view(team_id=team_id)
+
+
+@router.get("/teams/{team_id}/meetings/active")
+async def get_active_meeting(_request: Request, team_id: str = Path(...)):
+    return await get_active_meeting_view(team_id=team_id)
+
+
+@router.get("/teams/{team_id}/meetings/{meeting_id}")
+async def get_meeting(_request: Request, meeting_id: str = Path(...)):
+    return await get_meeting_view(meeting_id=meeting_id)
+
+
+@router.post("/teams/{team_id}/meetings/{meeting_id}/attendees")
+async def join_meeting(request: Request, meeting_id: str = Path(...)):
+    return await join_meeting_view(user_id=request.state.user, meeting_id=meeting_id)
+
+
+@router.get("/teams/{team_id}/meetings/{meeting_id}/attendees")
+async def get_meeting_attendees(request: Request, meeting_id: str = Path(...)):
+    return await get_meeting_attendees_view(meeting_id=meeting_id)
+
+
+@router.post(
+    "/teams/{team_id}/meetings/{meeting_id}/ratings",
+    dependencies=[Depends(IsAdminOrTeamMember())],
+)
+async def rate_meeting(
+    request: Request, payload: MeetingRatingPayload, meeting_id: str = Path(...)
+):
+    return await rate_meeting_view(
+        user_id=request.state.user, meeting_id=meeting_id, payload=payload
+    )
+
+
+@router.get("/teams/{team_id}/meetings/{meeting_id}/summary")
+async def get_meeting_summary(
+    _request: Request, team_id: str = Path(...), meeting_id: str = Path(...)
+):
+    return await get_meeting_summary_view(team_id=team_id, meeting_id=meeting_id)
+
+
+@router.get("/teams/{team_id}/meetings/{meeting_id}/sse")
+async def get_meeting_events(
+    request: Request,
+    team_id: str = Path(...),
+    meeting_id: str = Path(...),
+):
+    return await get_meeting_events_view(
+        request=request, team_id=team_id, meeting_id=meeting_id
+    )

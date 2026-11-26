@@ -6,7 +6,7 @@ from tortoise.exceptions import DoesNotExist
 from utils.log import Log
 from utils.tokens import decode_token
 
-from conf.app_vars import PUBLIC_PATHS
+from conf.settings import PUBLIC_PATHS
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):

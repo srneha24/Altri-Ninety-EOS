@@ -3,7 +3,7 @@ from functools import partial
 from tortoise.config import AppConfig, ConnectionConfig, TortoiseConfig
 from tortoise.contrib.fastapi import RegisterTortoise
 
-from conf.app_vars import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER
+from conf.settings import DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER
 
 TORTOISE_ORM = TortoiseConfig(
     connections={

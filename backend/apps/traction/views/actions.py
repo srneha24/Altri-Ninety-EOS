@@ -8,13 +8,13 @@ from tortoise.models import Model
 from tortoise.query_utils import Prefetch
 from utils.json_actions import simplify_json
 
-from .schemas import (
+from ..schemas import (
     IssueCreatePayload,
     IssueResponse,
     IssuesParams,
     IssueUpdatePayload,
+    QuarterlyRockParams,
     QuarterlyRockResponse,
-    RockParams,
     ScorecardParams,
     ScorecardResponse,
     ScoreResponse,
@@ -45,6 +45,7 @@ async def get_scorecard_view(team_id: str, params: ScorecardParams):
                 queryset=scores,
             )
         )
+        .select_related("owner")
     )
 
     results = await query
@@ -342,7 +343,7 @@ async def update_todo_view(todo_id: str, payload: TodoUpdatePayload):
         raise HTTPException(detail="Todo Not Found", status_code=404)
 
 
-async def get_quarterly_rocks_view(team_id: str, params: RockParams):
+async def get_quarterly_rocks_view(team_id: str, params: QuarterlyRockParams):
     query = (
         Rock.filter(team_id=team_id, quarter=params.quarter)
         .select_related("owner")
