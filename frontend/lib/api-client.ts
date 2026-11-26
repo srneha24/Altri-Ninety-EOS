@@ -3,6 +3,16 @@ type ApiResponse<T> = {
   message?: string
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number
+  ) {
+    super(message)
+    this.name = "ApiError"
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null
 }
@@ -40,7 +50,7 @@ export async function apiRequest<T>(
       isRecord(payload) && typeof payload.message === "string"
         ? payload.message
         : `Request failed with status ${response.status}.`
-    throw new Error(message)
+    throw new ApiError(message, response.status)
   }
 
   if (!isRecord(payload) || !("data" in payload)) {

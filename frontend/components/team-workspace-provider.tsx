@@ -28,15 +28,16 @@ import {
   type ApiRock,
   type ApiTodo,
 } from "@/lib/api"
-import type {
-  DemoIssue,
-  DemoMeasurable,
-  DemoRole,
-  DemoRock,
-  DemoTeam,
-  DemoTodo,
-  DemoUser,
-} from "@/lib/demo-data"
+import {
+  APP_NOW,
+  type DemoIssue,
+  type DemoMeasurable,
+  type DemoRole,
+  type DemoRock,
+  type DemoTeam,
+  type DemoTodo,
+  type DemoUser,
+} from "@/lib/types"
 
 type TeamWorkspaceContextValue = {
   role: DemoRole
@@ -100,7 +101,7 @@ function companyDateParts(): {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date())
+  }).formatToParts(new Date(APP_NOW))
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
 
   return {
@@ -363,7 +364,15 @@ export function TeamWorkspaceProvider({
             : undefined,
         })
         const mapped = mapIssue(issue)
-        setIssues((previous) => [mapped, ...previous])
+        setIssues((previous) => {
+          const existingIndex = previous.findIndex(
+            (existing) => existing.id === mapped.id
+          )
+          if (existingIndex === -1) return [mapped, ...previous]
+          return previous.map((existing, index) =>
+            index === existingIndex ? mapped : existing
+          )
+        })
         return mapped
       }),
     [selectedTeamId, withMutationError]

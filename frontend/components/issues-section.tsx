@@ -5,9 +5,8 @@ import { AlertTriangle, Check, ChevronDown, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { SelectMenu } from "@/components/ui/select-menu"
-import { useDemoWorkspace } from "@/components/demo-workspace-provider"
-import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
-import { DEMO_MEASURABLES, DEMO_USERS, type DemoIssue } from "@/lib/demo-data"
+import { useTeamWorkspace } from "@/components/team-workspace-provider"
+import type { DemoIssue } from "@/lib/types"
 import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 
 type IssuesSectionProps = {
@@ -16,7 +15,7 @@ type IssuesSectionProps = {
 
 function displayName(
   userId: string,
-  members: { id: string; name: string }[] = DEMO_USERS
+  members: { id: string; name: string }[]
 ): string {
   return members.find((user) => user.id === userId)?.name ?? "Unknown owner"
 }
@@ -33,7 +32,7 @@ function formatCreatedAt(value: string): string {
 
 function sourceDescription(
   issue: DemoIssue,
-  measurables = DEMO_MEASURABLES
+  measurables: { id: string; name: string }[] = []
 ): string | null {
   if (!issue.source) return null
   const measurable = measurables.find(
@@ -47,16 +46,15 @@ function sourceDescription(
 }
 
 function IssueCard({ issue }: { issue: DemoIssue }) {
-  const teamWorkspace = useOptionalTeamWorkspace()
-  const demoWorkspace = useDemoWorkspace()
+  const workspace = useTeamWorkspace()
   const identity = useWorkspaceIdentity()
   const {
     selectedTeam,
     updateIssuePriority,
     solveIssue,
     addTodo,
-  } = teamWorkspace ?? demoWorkspace
-  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
+  } = workspace
+  const role = identity?.role ?? workspace.role
   const [resolutionNote, setResolutionNote] = useState("")
   const [todoTitle, setTodoTitle] = useState("")
   const [todoOwnerId, setTodoOwnerId] = useState("")
@@ -64,8 +62,7 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
   const [showSolveForm, setShowSolveForm] = useState(false)
   const [notice, setNotice] = useState("")
   const canWrite = role !== "observer"
-  const members = teamWorkspace?.members ?? DEMO_USERS
-  const measurables = teamWorkspace?.measurables ?? DEMO_MEASURABLES
+  const { members, measurables } = workspace
   const owners = members.filter(
     (user) =>
       user.role !== "observer" && selectedTeam.memberIds.includes(user.id)
@@ -120,7 +117,10 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
             ) : null}
           </div>
           <p className="mt-1.5 text-xs text-[#756d67]">
-            Owner: <span className="font-medium">{displayName(issue.ownerId)}</span>
+            Owner:{" "}
+            <span className="font-medium">
+              {displayName(issue.ownerId, members)}
+            </span>
             <span className="px-1.5 text-[#d3c7be]">·</span>
             Created {formatCreatedAt(issue.createdAt)}
           </p>
@@ -230,7 +230,7 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
             />
           </label>
           <Button className="mt-auto h-9 rounded-lg text-xs" type="submit">
-            Add · 7 days
+            Add
           </Button>
         </form>
       ) : null}
@@ -267,12 +267,10 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
 }
 
 export function IssuesSection({ title = "Issues" }: IssuesSectionProps) {
-  const teamWorkspace = useOptionalTeamWorkspace()
-  const demoWorkspace = useDemoWorkspace()
+  const workspace = useTeamWorkspace()
   const identity = useWorkspaceIdentity()
-  const { currentUser, issues, createIssue } = teamWorkspace ?? demoWorkspace
-  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
-  const members = teamWorkspace?.members ?? DEMO_USERS
+  const { currentUser, issues, createIssue, members } = workspace
+  const role = identity?.role ?? workspace.role
   const [showSolved, setShowSolved] = useState(false)
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newTitle, setNewTitle] = useState("")
@@ -320,7 +318,7 @@ export function IssuesSection({ title = "Issues" }: IssuesSectionProps) {
   return (
     <section
       aria-labelledby="issues-title"
-      className="overflow-hidden rounded-2xl border border-[#eee5de] bg-white shadow-sm shadow-[#3d2517]/[0.025]"
+      className="overflow-visible rounded-2xl border border-[#eee5de] bg-white shadow-sm shadow-[#3d2517]/[0.025]"
     >
       <div className="flex flex-col gap-3 border-b border-[#f1ebe6] px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>

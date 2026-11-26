@@ -33,16 +33,26 @@ class IssueSourceValidator(Validator):
 
         week_start = value.get("week_start")
         if "measurable_id" in ids:
-            if not isinstance(week_start, str) or not week_start.strip():
+            if (
+                not isinstance(week_start, str) and not isinstance(week_start, date)
+            ) or (isinstance(week_start, str) and not week_start.strip()):
                 raise ValidationError(
-                    "week_start is required if measurable_id is set and must be a string"
+                    "week_start is required if measurable_id is set and must be a ISO format date string"
                 )
-            try:
-                day = date.fromisoformat(week_start)
-            except ValueError:
-                raise ValidationError("week_start is not a valid date in ISO format")
+            if isinstance(week_start, str):
+                try:
+                    day = date.fromisoformat(week_start)
+                except ValueError:
+                    raise ValidationError(
+                        "week_start is not a valid date in ISO format"
+                    )
+            else:
+                day = week_start
+
             if day.weekday() != 0:
                 raise ValidationError("week_start is not a Monday")
+
+            value["week_start"] = day.isoformat()
         elif week_start is not None:
             raise ValidationError("week_start is invalid when source is a rock or todo")
 

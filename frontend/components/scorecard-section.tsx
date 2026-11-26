@@ -4,10 +4,9 @@ import { useState, type SubmitEvent } from "react"
 import { AlertCircle, Check, Clock3, PencilLine } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useDemoWorkspace } from "@/components/demo-workspace-provider"
-import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
+import { useTeamWorkspace } from "@/components/team-workspace-provider"
 import { useWorkspaceIdentity } from "@/lib/workspace-identity"
-import type { DemoMeasurable, Goal } from "@/lib/demo-data"
+import type { DemoMeasurable, Goal } from "@/lib/types"
 
 type ScorecardSectionProps = {
   title?: string
@@ -79,8 +78,7 @@ function formatWeek(weekStart: string): string {
 export function ScorecardSection({
   title = "Scorecard",
 }: ScorecardSectionProps) {
-  const teamWorkspace = useOptionalTeamWorkspace()
-  const demoWorkspace = useDemoWorkspace()
+  const workspace = useTeamWorkspace()
   const identity = useWorkspaceIdentity()
   const {
     measurables,
@@ -88,9 +86,9 @@ export function ScorecardSection({
     scores,
     updateScore,
     createIssue,
-  } = teamWorkspace ?? demoWorkspace
-  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
-  const members = teamWorkspace?.members ?? []
+  } = workspace
+  const role = identity?.role ?? workspace.role
+  const { members } = workspace
   const [editingKey, setEditingKey] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState("")
   const [notice, setNotice] = useState("")
@@ -224,7 +222,7 @@ export function ScorecardSection({
                   <span className="mt-1 block text-[11px] font-normal text-[#b0a49b]">
                     Owner:{" "}
                     {members.find((member) => member.id === measurable.ownerId)
-                      ?.name ?? demoOwnerName(measurable.ownerId)}
+                      ?.name ?? "Unknown owner"}
                   </span>
                 </th>
                 {weeks.map((week) => {
@@ -239,8 +237,7 @@ export function ScorecardSection({
                   const isEditing = editingKey === key
                   const canEditScore =
                     canEdit &&
-                    (!teamWorkspace ||
-                      Boolean(teamWorkspace.scoreIds[measurable.id]?.[week]))
+                    Boolean(workspace.scoreIds[measurable.id]?.[week])
                   return (
                     <td className="px-1.5 py-2 text-center align-top" key={week}>
                       {isEditing ? (
@@ -334,19 +331,8 @@ export function ScorecardSection({
         </table>
       </div>
       <p className="border-t border-[#f1ebe6] px-5 py-3 text-[11px] text-[#91867e] sm:px-6">
-        {teamWorkspace
-          ? "Scores are saved to the team workspace. Closed weeks without a score are off track; an unscored current week is pending."
-          : "Last save wins in this local demo. Closed weeks without a score are off track; an unscored current week is pending."}
+        Scores are saved to the team workspace. Closed weeks without a score are off track; an unscored current week is pending.
       </p>
     </section>
   )
-}
-
-function demoOwnerName(ownerId: string): string {
-  const owners: Record<string, string> = {
-    "demo-alex": "Alex Morgan",
-    "demo-jordan": "Jordan Lee",
-    "demo-sam": "Sam Rivera",
-  }
-  return owners[ownerId] ?? "Unassigned"
 }

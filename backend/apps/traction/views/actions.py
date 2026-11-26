@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 
 from conf.responses import CustomJSONResponse
 from fastapi import HTTPException
@@ -6,6 +6,7 @@ from models import Issue, Measurable, Membership, Rock, Score, Todo, User
 from tortoise.exceptions import DoesNotExist, ValidationError
 from tortoise.models import Model
 from tortoise.query_utils import Prefetch
+from utils.clock import get_app_now, get_app_today
 from utils.json_actions import simplify_json
 
 from ..schemas import (
@@ -190,7 +191,9 @@ async def create_issue_view(team_id: str, user_id: str, payload: IssueCreatePayl
             try:
                 source = await source_model.get(id=source_id)
                 payload.title = (
-                    source.name if issue_source_key == "measurable_id" else source.title
+                    f"{source.name}, week of {payload.source.week_start.strftime('%b %d')}"
+                    if issue_source_key == "measurable_id"
+                    else source.title
                 )
             except DoesNotExist:
                 raise HTTPException(detail="source Does Not Exist", status_code=400)
@@ -227,7 +230,7 @@ async def update_issue_view(issue_id: str, payload: IssueUpdatePayload):
 
         update_payload = payload.model_dump(exclude_unset=True)
         if payload.resolution_note and not issue.solved_at:
-            update_payload["solved_at"] = datetime.now(UTC)
+            update_payload["solved_at"] = get_app_now()
         elif (
             "resolution_note" in payload.model_fields_set
             and payload.resolution_note is None
@@ -302,7 +305,7 @@ async def create_todo_view(team_id: str, payload: TodoCreatePayload):
 
     todo = await Todo.create(
         title=payload.title,
-        due_date=(datetime.now(UTC) + timedelta(days=7)).date(),
+        due_date=(await get_app_today(team_id=team_id)) + timedelta(days=7),
         source_issue_id=payload.source_issue_id,
         owner_id=payload.owner_id,
         team_id=team_id,
@@ -328,7 +331,7 @@ async def update_todo_view(todo_id: str, payload: TodoUpdatePayload):
                     }
                 )
 
-            todo.done_at = datetime.now(UTC)
+            todo.done_at = get_app_now()
         else:
             todo.done_at = None
 

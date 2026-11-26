@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from "react"
 
-import type { DemoUser } from "@/lib/demo-data"
+import type { DemoUser } from "@/lib/types"
 
 const WorkspaceIdentityContext = createContext<DemoUser | null>(null)
 

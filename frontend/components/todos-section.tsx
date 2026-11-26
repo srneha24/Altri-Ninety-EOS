@@ -4,9 +4,7 @@ import { useMemo } from "react"
 import { Check, Circle, Clock3, Undo2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { useDemoWorkspace } from "@/components/demo-workspace-provider"
-import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
-import { DEMO_TODAY, DEMO_USERS } from "@/lib/demo-data"
+import { useTeamWorkspace } from "@/components/team-workspace-provider"
 import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 
 const LAST_CLOSED_WEEK_START = "2026-11-16"
@@ -48,13 +46,10 @@ function companyDate(timestamp: string): string {
 }
 
 export function TodosSection() {
-  const teamWorkspace = useOptionalTeamWorkspace()
-  const demoWorkspace = useDemoWorkspace()
+  const teamWorkspace = useTeamWorkspace()
   const identity = useWorkspaceIdentity()
-  const { todos, issues, toggleTodo } = teamWorkspace ?? demoWorkspace
-  const role = teamWorkspace?.role ?? identity?.role ?? demoWorkspace.role
-  const members = teamWorkspace?.members ?? DEMO_USERS
-  const today = teamWorkspace?.today ?? DEMO_TODAY
+  const { todos, issues, toggleTodo, members, today } = teamWorkspace
+  const role = identity?.role ?? teamWorkspace.role
   const currentWeek = teamWorkspace?.weeks[teamWorkspace.weeks.length - 1]
   const lastClosedWeekStart = currentWeek
     ? addDays(currentWeek, -7)

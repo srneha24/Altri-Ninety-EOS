@@ -15,7 +15,7 @@ import { SelectMenu } from "@/components/ui/select-menu"
 import { TeamWorkspaceProvider } from "@/components/team-workspace-provider"
 import { getCurrentUser, getUserTeams, type ApiUser } from "@/lib/api"
 import { clearTokens, getRefreshToken, refreshSession } from "@/lib/auth"
-import type { DemoRole, DemoTeam, DemoUser } from "@/lib/demo-data"
+import type { DemoRole, DemoTeam, DemoUser } from "@/lib/types"
 import { WorkspaceIdentityProvider } from "@/lib/workspace-identity"
 
 type WorkspaceShellProps = {
@@ -142,7 +142,7 @@ export function WorkspaceShell({
   }
 
   const pageContent =
-    activePage === "team" && currentUser && selectedTeamId ? (
+    currentUser && selectedTeamId ? (
       <TeamWorkspaceProvider
         selectedTeamId={selectedTeamId}
         teams={teams}
@@ -256,7 +256,7 @@ export function WorkspaceShell({
               </div>
             </div>
 
-            {activePage === "team" && teams.length > 1 ? (
+            {teams.length > 1 ? (
               <label className="flex items-center gap-2 text-xs font-medium text-[#756d67]">
                 Team
                 <SelectMenu
@@ -270,7 +270,7 @@ export function WorkspaceShell({
                   value={selectedTeamId}
                 />
               </label>
-            ) : activePage === "team" && selectedTeam ? (
+            ) : selectedTeam ? (
               <span className="rounded-full bg-[#fff9f3] px-3 py-2 text-xs font-medium text-[#9b4d18]">
                 {selectedTeam.name}
               </span>
@@ -287,13 +287,6 @@ export function WorkspaceShell({
             >
               {workspaceError}
             </p>
-          ) : activePage === "meeting" ? (
-            <div className="mb-6 flex items-center justify-between gap-3 rounded-xl border border-[#f0dfd1] bg-[#fff9f3] px-4 py-3 text-xs text-[#8a5836]">
-              <span>
-                <strong className="font-semibold">Demo meeting.</strong>{" "}
-                Meeting actions are local to this browser.
-              </span>
-            </div>
           ) : null}
           {workspaceError ? null : workspaceContent}
         </div>

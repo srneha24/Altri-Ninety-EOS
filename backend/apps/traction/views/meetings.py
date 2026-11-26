@@ -1,6 +1,5 @@
 import asyncio
 import json
-from datetime import UTC, datetime
 
 from conf.responses import CustomJSONResponse
 from fastapi import BackgroundTasks, HTTPException, Request
@@ -8,6 +7,7 @@ from fastapi.responses import StreamingResponse
 from models import Meeting, MeetingAttendee
 from tortoise.exceptions import DoesNotExist, IntegrityError
 from tortoise.transactions import in_transaction
+from utils.clock import get_app_now
 from utils.json_actions import simplify_json
 
 from ..schemas import (
@@ -32,7 +32,7 @@ async def meeting_state_view(
 
         async with in_transaction():
             meeting = await Meeting.create(
-                started_at=datetime.now(UTC), facilitator_id=user_id, team_id=team_id
+                started_at=get_app_now(), facilitator_id=user_id, team_id=team_id
             )
             await MeetingAttendee.create(
                 user_id=user_id, meeting=meeting, joined_at=meeting.started_at
@@ -53,7 +53,7 @@ async def meeting_state_view(
                 .prefetch_related("attendees", "attendees__user")
             )
         except DoesNotExist:
-            raise HTTPException("meeting Does Not Exist", status_code=400)
+            raise HTTPException(detail="meeting Does Not Exist", status_code=400)
 
         if meeting.facilitator_id != user_id:
             raise HTTPException(
@@ -61,7 +61,7 @@ async def meeting_state_view(
             )
 
         meeting.update_from_dict(
-            {state_to_datetime_field_mapping.get(payload.state): datetime.now(UTC)}
+            {state_to_datetime_field_mapping.get(payload.state): get_app_now()}
         )
         await meeting.save()
         if payload.state == MeetingState.END:
@@ -100,7 +100,7 @@ async def get_meeting_view(meeting_id: str):
             }
         )
     except DoesNotExist:
-        raise HTTPException("meeting Not Found", status_code=404)
+        raise HTTPException(detail="meeting Not Found", status_code=404)
 
 
 async def join_meeting_view(user_id: str, meeting_id: str):
@@ -114,12 +114,12 @@ async def join_meeting_view(user_id: str, meeting_id: str):
             raise HTTPException(detail="Meeting Has Already Ended", status_code=400)
 
         await MeetingAttendee.create(
-            user_id=user_id, meeting=meeting, joined_at=datetime.now(UTC)
+            user_id=user_id, meeting=meeting, joined_at=get_app_now()
         )
         return CustomJSONResponse(message="Meeting Joined", content={})
     except IntegrityError:
         attendee = await MeetingAttendee.get(user_id=user_id, meeting=meeting)
-        attendee.joined_at = datetime.now(UTC)
+        attendee.joined_at = get_app_now()
         await attendee.save()
 
         return CustomJSONResponse(message="Meeting Joined", content={})
@@ -228,8 +228,10 @@ async def get_active_meeting_view(team_id: str):
 
 async def get_meeting_events_view(request: Request, team_id: str, meeting_id: str):
     try:
-        meeting = await Meeting.get(id=meeting_id, team_id=team_id).select_related(
-            "facilitator"
+        meeting = (
+            await Meeting.get(id=meeting_id, team_id=team_id)
+            .select_related("facilitator")
+            .prefetch_related("attendees", "attendees__user")
         )
     except DoesNotExist:
         raise HTTPException(detail="meeting Not Found", status_code=404)
@@ -266,9 +268,11 @@ async def get_meeting_events_view(request: Request, team_id: str, meeting_id: st
                 return
 
             try:
-                current_meeting = await Meeting.get(
-                    id=meeting_id, team_id=team_id
-                ).select_related("facilitator")
+                current_meeting = (
+                    await Meeting.get(id=meeting_id, team_id=team_id)
+                    .select_related("facilitator")
+                    .prefetch_related("attendees", "attendees__user")
+                )
             except DoesNotExist:
                 yield 'event: meeting_unavailable\ndata: {"detail":"meeting Not Found"}\n\n'
                 return

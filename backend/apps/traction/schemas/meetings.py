@@ -44,6 +44,7 @@ _MeetingResponseBase = pydantic_model_creator(
 
 
 class MeetingResponse(_MeetingResponseBase):
+    summary: dict | None
     state: MeetingState
     facilitator: _UserResponse  # type: ignore
     attendees: list[MeetingAttendeeResponse]

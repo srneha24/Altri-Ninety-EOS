@@ -1,10 +1,10 @@
-from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
 from tortoise import fields
 from tortoise.exceptions import ValidationError
 from tortoise.validators import MaxValueValidator, MinValueValidator
+from utils.clock import get_app_today
 
 from ._base_db_model import BaseModel, generate_id
 from ._custom_db_validators import IssueSourceValidator, WeekStartValidator
@@ -122,7 +122,7 @@ class Issue(BaseModel):
                 )
             else:
                 if key == "todo_id" and (
-                    source_obj.done_at or datetime.now(UTC).date() < source_obj.due_date
+                    source_obj.done_at or await get_app_today(team_id=self.team_id) < source_obj.due_date
                 ):
                     raise ValidationError("Only overdue todos can become issues")
                 elif key == "rock_id":
@@ -132,7 +132,7 @@ class Issue(BaseModel):
                     rock_milestones = await Milestone.filter(rock_id=source_id)
                     overdue_milestone_exists = False
                     for rock_milestone in rock_milestones:
-                        if datetime.now(UTC).date() < rock_milestone.due_date:
+                        if await get_app_today(team_id=self.team_id) < rock_milestone.due_date:
                             overdue_milestone_exists = True
                             break
                     if not overdue_milestone_exists:

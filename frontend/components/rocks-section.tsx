@@ -2,9 +2,7 @@
 
 import { ChevronDown, Flag, Milestone } from "lucide-react"
 
-import { useDemoWorkspace } from "@/components/demo-workspace-provider"
-import { useOptionalTeamWorkspace } from "@/components/team-workspace-provider"
-import { DEMO_TODAY, DEMO_USERS } from "@/lib/demo-data"
+import { useTeamWorkspace } from "@/components/team-workspace-provider"
 
 function ownerName(
   ownerId: string,
@@ -23,11 +21,7 @@ function dateLabel(date: string): string {
 }
 
 export function RocksSection() {
-  const teamWorkspace = useOptionalTeamWorkspace()
-  const demoWorkspace = useDemoWorkspace()
-  const { rocks } = teamWorkspace ?? demoWorkspace
-  const members = teamWorkspace?.members ?? DEMO_USERS
-  const today = teamWorkspace?.today ?? DEMO_TODAY
+  const { rocks, members, today } = useTeamWorkspace()
 
   return (
     <section
