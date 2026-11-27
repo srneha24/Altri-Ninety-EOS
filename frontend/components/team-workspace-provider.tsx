@@ -374,6 +374,11 @@ export function TeamWorkspaceProvider({
   useEffect(() => {
     if (!selectedTeam) return
 
+    // Capture the narrowed value before the asynchronous callback. State may
+    // change while the stream is reconnecting, so TypeScript cannot preserve
+    // the outer null check inside `connect`.
+    const teamId = selectedTeam.id
+
     const controller = new AbortController()
     let retry: number | undefined
 
@@ -385,7 +390,7 @@ export function TeamWorkspaceProvider({
 
     async function connect(): Promise<void> {
       try {
-        const activeMeeting = await getActiveMeeting(selectedTeam.id)
+        const activeMeeting = await getActiveMeeting(teamId)
         // Close the discovery-to-subscription gap with a fresh snapshot. Any
         // subsequent mutation is delivered by the stream below.
         void refreshWorkspace()
@@ -395,7 +400,7 @@ export function TeamWorkspaceProvider({
         }
 
         await readMeetingEventStream(
-          selectedTeam.id,
+          teamId,
           activeMeeting.id,
           token,
           controller.signal,

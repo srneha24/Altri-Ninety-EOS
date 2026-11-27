@@ -1,4 +1,4 @@
-"""Load and synchronize repository seed.json records in the configured database."""
+"""Insert repository seed.json records into the configured database when missing."""
 
 import argparse
 import asyncio
@@ -58,19 +58,14 @@ async def seed_record(
     identifier: str,
     defaults: dict[str, Any],
     stats: dict[str, dict[str, int]],
-) -> None:
+) -> bool:
     if len(identifier) > MAX_ID_LENGTH:
         raise ValueError(f"ID exceeds {MAX_ID_LENGTH} characters: {identifier}")
 
-    record, created = await model.get_or_create(id=identifier, defaults=defaults)
+    _, created = await model.get_or_create(id=identifier, defaults=defaults)
     if created:
         stats[model.__name__]["created"] += 1
-        return
-
-    for field_name, value in defaults.items():
-        setattr(record, field_name, value)
-    await record.save()
-    stats[model.__name__]["updated"] += 1
+    return created
 
 
 async def seed_keyed_record(
@@ -79,7 +74,7 @@ async def seed_keyed_record(
     identity: dict[str, Any],
     defaults: dict[str, Any],
     stats: dict[str, dict[str, int]],
-) -> None:
+) -> bool:
     if len(identifier) > MAX_ID_LENGTH:
         raise ValueError(f"ID exceeds {MAX_ID_LENGTH} characters: {identifier}")
 
@@ -89,27 +84,17 @@ async def seed_keyed_record(
             raise ValueError(
                 f"Generated ID collision for {model.__name__}: {identifier}"
             )
-        for field_name, value in defaults.items():
-            setattr(record, field_name, value)
-        await record.save()
-        stats[model.__name__]["updated"] += 1
-        return
+        return False
 
     matches = await model.filter(**identity).all()
     if len(matches) > 1:
         raise ValueError(f"Multiple {model.__name__} rows match {identity}")
     if matches:
-        previous_id = matches[0].id
-        updated = await model.filter(id=previous_id).update(
-            id=identifier, **defaults, updated_at=datetime.now(UTC)
-        )
-        if updated != 1:
-            raise RuntimeError(f"Failed to re-key {model.__name__} row {previous_id!r}")
-        stats[model.__name__]["updated"] += 1
-        return
+        return False
 
     await model.create(id=identifier, **defaults)
     stats[model.__name__]["created"] += 1
+    return True
 
 
 @atomic()
@@ -253,8 +238,9 @@ async def seed_records(seed: dict[str, Any], stats: dict[str, dict[str, int]]) -
             stats,
         )
 
+    created_ended_meeting_ids: list[str] = []
     for meeting in seed["meetings"]:
-        await seed_record(
+        meeting_created = await seed_record(
             Meeting,
             meeting["id"],
             {
@@ -274,6 +260,15 @@ async def seed_records(seed: dict[str, Any], stats: dict[str, dict[str, int]]) -
             raise ValueError(
                 f"Meeting {meeting['id']} has a rating from a non-attendee"
             )
+        for user_id, rating in ratings.items():
+            if (
+                isinstance(rating, bool)
+                or not isinstance(rating, int)
+                or not 1 <= rating <= 10
+            ):
+                raise ValueError(
+                    f"Meeting {meeting['id']} has an invalid rating for {user_id}"
+                )
 
         for user_id in attendee_ids:
             await seed_keyed_record(
@@ -288,11 +283,18 @@ async def seed_records(seed: dict[str, Any], stats: dict[str, dict[str, int]]) -
                 stats,
             )
 
-    for team_id in {meeting["team_id"] for meeting in seed["meetings"]}:
+        if meeting_created and meeting["ended_at"] is not None:
+            created_ended_meeting_ids.append(meeting["id"])
+
+    for team_id in {
+        meeting["team_id"]
+        for meeting in seed["meetings"]
+        if meeting["id"] in created_ended_meeting_ids
+    }:
         seeded_meetings = (
             await Meeting.filter(
                 team_id=team_id,
-                id__in=[meeting["id"] for meeting in seed["meetings"]],
+                id__in=created_ended_meeting_ids,
                 ended_at__isnull=False,
             )
             .select_related("facilitator", "team")

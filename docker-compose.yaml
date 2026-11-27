@@ -1,0 +1,53 @@
+services:
+  db:
+    container_name: ninety-eos-altri-db
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ninety
+      POSTGRES_PASSWORD: ninety
+      POSTGRES_DB: ninety_eos_altri_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ninety -d ninety_eos_altri_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    container_name: ninety-eos-altri-backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: altri-ninety-eos-backend:latest
+    pull_policy: missing
+    environment:
+      JWT_SECRET: 3e38436c117ea4ac94f4b3ba3bb000bd1586a9cb2a4beba4a682a08cf4dbe99c
+      APP_NOW: ${APP_NOW:-2026-11-11T15:00:00Z}
+      FRONTEND_URL: http://localhost:3000
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ninety
+      DB_PASSWORD: ninety
+      DB_NAME: ninety_eos_altri_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    container_name: ninety-eos-altri-frontend
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    image: altri-ninety-eos-frontend:latest
+    pull_policy: missing
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

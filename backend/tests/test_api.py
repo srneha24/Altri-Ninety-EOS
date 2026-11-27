@@ -135,7 +135,7 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
     async def test_admin_can_access_all_teams(self):
         teams_resp = await self.client.get("/auth/teams", headers=self._auth_headers("u1"))
         self.assertEqual(teams_resp.status_code, 200)
-        team_ids = {t["id"] for t in teams_resp.json()["teams"]}
+        team_ids = {t["id"] for t in teams_resp.json()["data"]["teams"]}
         self.assertTrue({"team_lead", "team_sales", "team_ops"}.issubset(team_ids))
 
         sales_resp = await self.client.get(
