@@ -3,7 +3,6 @@ from fastapi import HTTPException
 from jwt import InvalidTokenError
 from models import Membership, Team, User
 from tortoise.exceptions import DoesNotExist
-from utils.clock import get_app_now
 from utils.log import Log
 from utils.tokens import decode_token, get_tokens
 
@@ -64,7 +63,3 @@ async def get_current_user_view(user_id: str):
             }
         }
     )
-
-
-async def server_now_view():
-    return CustomJSONResponse(content={"server_now": get_app_now().isoformat()})

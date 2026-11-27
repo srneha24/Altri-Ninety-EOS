@@ -7,10 +7,12 @@ from apps.traction.routers import router as traction_router
 from conf.database import register_orm
 from conf.excpetion_handlers import exception_handlers
 from conf.middlewares import AuthenticationMiddleware
+from conf.responses import CustomJSONResponse
 from conf.settings import FRONTEND_URL
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
+from utils.clock import get_app_now
 from utils.log import Log
 
 
@@ -46,4 +48,9 @@ app.include_router(company_router)
 app.include_router(traction_router)
 
 
-email_validator.TEST_ENVIRONMENT = True # To allow the use of the seed user emails
+email_validator.TEST_ENVIRONMENT = True  # To allow the use of the seed user emails
+
+
+@app.get("/server-now")
+async def server_now(_request: Request):
+    return CustomJSONResponse(content={"server_now": get_app_now().isoformat()})

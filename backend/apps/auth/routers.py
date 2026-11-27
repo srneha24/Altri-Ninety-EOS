@@ -7,7 +7,6 @@ from .views import (
     get_user_teams_view,
     login_view,
     refresh_session_view,
-    server_now_view,
 )
 
 router = APIRouter(
@@ -35,8 +34,3 @@ async def get_current_user(request: Request):
 @router.get("/teams", dependencies=[Depends(IsAuthenticated())])
 async def get_user_teams(request: Request):
     return await get_user_teams_view(user_id=request.state.user)
-
-
-@router.get("/server-now")
-async def server_now(_request: Request):
-    return await server_now_view()
