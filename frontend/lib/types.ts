@@ -35,7 +35,11 @@ export type DemoIssue = {
   teamId?: string
   priority: number | null
   createdAt: string
-  source: { measurableId: string; weekStart: string } | null
+  source:
+    | { measurableId: string; weekStart: string }
+    | { rockId: string }
+    | { todoId: string }
+    | null
   solvedAt: string | null
   resolutionNote: string | null
 }

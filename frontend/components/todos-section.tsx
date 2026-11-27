@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Check, Circle, Clock3, Undo2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -46,6 +46,7 @@ export function TodosSection() {
   const teamWorkspace = useTeamWorkspace()
   const identity = useWorkspaceIdentity()
   const { todos, issues, toggleTodo, members, today } = teamWorkspace
+  const { createIssue } = teamWorkspace
   const role = identity?.role ?? teamWorkspace.role
   const currentWeek = teamWorkspace.weeks[teamWorkspace.weeks.length - 1]
   const lastClosedWeekStart = currentWeek ? addDays(currentWeek, -7) : ""
@@ -53,6 +54,24 @@ export function TodosSection() {
     ? addDays(lastClosedWeekStart, 6)
     : ""
   const canWrite = role !== "observer"
+  const [pendingTodoId, setPendingTodoId] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ todoId: string; text: string } | null>(null)
+
+  async function makeIssue(todoId: string, title: string) {
+    setPendingTodoId(todoId)
+    setNotice(null)
+    try {
+      const issue = await createIssue(title, 3, { todoId })
+      setNotice({ todoId, text: `Issue: ${issue.title}` })
+    } catch (error) {
+      setNotice({
+        todoId,
+        text: error instanceof Error ? error.message : "Unable to create the Issue.",
+      })
+    } finally {
+      setPendingTodoId(null)
+    }
+  }
 
   const completion = useMemo(() => {
     if (!lastClosedWeekStart || !lastClosedWeekEnd) return null
@@ -115,6 +134,13 @@ export function TodosSection() {
           const linkedIssue = todo.issueId
             ? issues.find((issue) => issue.id === todo.issueId)?.title ?? null
             : null
+          const existingSourceIssue = issues.find(
+            (issue) =>
+              !issue.solvedAt &&
+              issue.source !== null &&
+              "todoId" in issue.source &&
+              issue.source.todoId === todo.id
+          )
           return (
             <article
               className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6"
@@ -168,7 +194,29 @@ export function TodosSection() {
                   ) : null}
                 </div>
               </div>
-              {canWrite ? (
+              <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-center">
+                {canWrite && overdue && !todo.doneAt && !existingSourceIssue ? (
+                  <Button
+                    className="h-9 rounded-lg bg-[#a64e16] px-3 text-sm font-semibold text-white shadow-sm hover:bg-[#873e10] focus-visible:ring-[#c96a29]"
+                    disabled={pendingTodoId === todo.id}
+                    onClick={() => void makeIssue(todo.id, todo.title)}
+                    size="sm"
+                    type="button"
+                  >
+                    {pendingTodoId === todo.id ? "Creating…" : "Make it an Issue"}
+                  </Button>
+                ) : null}
+                {existingSourceIssue ? (
+                  <span className="text-xs font-medium text-[#9b4d18]">
+                    Open Issue: {existingSourceIssue.title}
+                  </span>
+                ) : null}
+                {notice?.todoId === todo.id ? (
+                  <span aria-live="polite" className="text-xs text-[#8a5836]">
+                    {notice.text}
+                  </span>
+                ) : null}
+                {canWrite ? (
                 <Button
                   aria-label={
                     todo.doneAt
@@ -197,7 +245,8 @@ export function TodosSection() {
                     </>
                   )}
                 </Button>
-              ) : null}
+                ) : null}
+              </div>
             </article>
           )
         })}

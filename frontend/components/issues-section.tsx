@@ -30,19 +30,44 @@ function formatCreatedAt(value: string): string {
   })
 }
 
+type IssueSourceDescription = {
+  kind: "measurable" | "rock" | "todo"
+  text: string
+}
+
 function sourceDescription(
   issue: DemoIssue,
-  measurables: { id: string; name: string }[] = []
-): string | null {
-  if (!issue.source) return null
+  measurables: { id: string; name: string }[] = [],
+  rocks: { id: string; title: string }[] = [],
+  todos: { id: string; title: string }[] = []
+): IssueSourceDescription | null {
+  const source = issue.source
+  if (!source) return null
+  if ("rockId" in source) {
+    const rock = rocks.find((item) => item.id === source.rockId)
+    return { kind: "rock", text: `Rock · ${rock?.title ?? "Unknown Rock"}` }
+  }
+  if ("todoId" in source) {
+    const todo = todos.find((item) => item.id === source.todoId)
+    return { kind: "todo", text: `To-Do · ${todo?.title ?? "Unknown To-Do"}` }
+  }
   const measurable = measurables.find(
-    (item) => item.id === issue.source?.measurableId
+    (item) => item.id === source.measurableId
   )
-  const date = new Date(`${issue.source.weekStart}T12:00:00Z`)
-  return `${measurable?.name ?? "Measurable"} · week of ${date.toLocaleDateString(
-    "en-US",
-    { month: "short", day: "numeric", timeZone: "UTC" }
-  )}`
+  const date = new Date(`${source.weekStart}T12:00:00Z`)
+  return {
+    kind: "measurable",
+    text: `${measurable?.name ?? "Measurable"} · week of ${date.toLocaleDateString(
+      "en-US",
+      { month: "short", day: "numeric", timeZone: "UTC" }
+    )}`,
+  }
+}
+
+const sourceTextColors: Record<IssueSourceDescription["kind"], string> = {
+  measurable: "text-[#1d4ed8]",
+  rock: "text-[#7e22ce]",
+  todo: "text-[#0f766e]",
 }
 
 function IssueCard({ issue }: { issue: DemoIssue }) {
@@ -62,12 +87,13 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
   const [showSolveForm, setShowSolveForm] = useState(false)
   const [notice, setNotice] = useState("")
   const canWrite = role !== "observer"
-  const { members, measurables } = workspace
+  const { members, measurables, rocks, todos } = workspace
   const owners = members.filter(
     (user) =>
       user.role !== "observer" && selectedTeam.memberIds.includes(user.id)
   )
   const isSolved = Boolean(issue.solvedAt)
+  const source = sourceDescription(issue, measurables, rocks, todos)
 
   async function handleSolve(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -124,9 +150,10 @@ function IssueCard({ issue }: { issue: DemoIssue }) {
             <span className="px-1.5 text-[#d3c7be]">·</span>
             Created {formatCreatedAt(issue.createdAt)}
           </p>
-          {sourceDescription(issue, measurables) ? (
-            <p className="mt-1 text-[11px] text-[#9b4d18]">
-              Source: {sourceDescription(issue, measurables)}
+          {source ? (
+            <p className="mt-1 text-[11px]">
+              <span className="text-[#756d67]">Source: </span>
+              <span className={sourceTextColors[source.kind]}>{source.text}</span>
             </p>
           ) : null}
         </div>

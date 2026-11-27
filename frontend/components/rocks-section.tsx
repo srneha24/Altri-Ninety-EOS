@@ -1,8 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import { ChevronDown, Flag, Milestone } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { useTeamWorkspace } from "@/components/team-workspace-provider"
+import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 
 function ownerName(
   ownerId: string,
@@ -21,7 +24,29 @@ function dateLabel(date: string): string {
 }
 
 export function RocksSection() {
-  const { rocks, members, today } = useTeamWorkspace()
+  const workspace = useTeamWorkspace()
+  const identity = useWorkspaceIdentity()
+  const { rocks, members, today, issues, createIssue } = workspace
+  const role = identity?.role ?? workspace.role
+  const canWrite = role !== "observer"
+  const [pendingRockId, setPendingRockId] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ rockId: string; text: string } | null>(null)
+
+  async function makeIssue(rockId: string, title: string) {
+    setPendingRockId(rockId)
+    setNotice(null)
+    try {
+      const issue = await createIssue(title, 3, { rockId })
+      setNotice({ rockId, text: `Issue: ${issue.title}` })
+    } catch (error) {
+      setNotice({
+        rockId,
+        text: error instanceof Error ? error.message : "Unable to create the Issue.",
+      })
+    } finally {
+      setPendingRockId(null)
+    }
+  }
 
   return (
     <section
@@ -62,6 +87,15 @@ export function RocksSection() {
                 )
           const hasOverdueMilestone = rock.milestones.some(
             (milestone) => !milestone.done && milestone.dueDate < today
+          )
+          const canBecomeIssue =
+            rock.seededStatus === "off_track" && hasOverdueMilestone
+          const existingIssue = issues.find(
+            (issue) =>
+              !issue.solvedAt &&
+              issue.source !== null &&
+              "rockId" in issue.source &&
+              issue.source.rockId === rock.id
           )
           const status =
             rock.seededStatus === "complete"
@@ -159,6 +193,26 @@ export function RocksSection() {
                     No milestones for this Rock.
                   </p>
                 )}
+                {existingIssue ? (
+                  <p className="mt-3 text-xs font-medium text-[#9b4d18]">
+                    Open Issue: {existingIssue.title}
+                  </p>
+                ) : null}
+                {canWrite && canBecomeIssue && !existingIssue ? (
+                  <Button
+                    className="mt-3 h-9 rounded-lg bg-[#a64e16] px-3 text-sm font-semibold text-white shadow-sm hover:bg-[#873e10] focus-visible:ring-[#c96a29]"
+                    disabled={pendingRockId === rock.id}
+                    onClick={() => void makeIssue(rock.id, rock.title)}
+                    type="button"
+                  >
+                    {pendingRockId === rock.id ? "Creating…" : "Make it an Issue"}
+                  </Button>
+                ) : null}
+                {notice?.rockId === rock.id ? (
+                  <p aria-live="polite" className="mt-2 text-xs text-[#8a5836]">
+                    {notice.text}
+                  </p>
+                ) : null}
               </div>
             </details>
           )
