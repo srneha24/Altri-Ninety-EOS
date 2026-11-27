@@ -242,7 +242,10 @@ export function createIssue(
   payload: {
     title?: string;
     priority?: number | null;
-    source?: { measurable_id: string; week_start: string; };
+    source?:
+      | { measurable_id: string; week_start: string }
+      | { rock_id: string }
+      | { todo_id: string };
   }
 ): Promise<ApiIssue> {
   return authenticatedRequest(

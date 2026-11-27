@@ -160,16 +160,19 @@ class Issue(BaseModel):
                 ):
                     raise ValidationError("Only overdue todos can become issues")
                 elif key == "rock_id":
-                    if source_obj.status != Rock.Status.OFF_TRACK:
-                        raise ValidationError("Only off-track rocks can become issues")
-
                     rock_milestones = await Milestone.filter(rock_id=source_id)
                     today = await get_app_today(team_id=self.team_id)
                     overdue_milestone_exists = any(
                         not rock_milestone.done and rock_milestone.due_date < today
                         for rock_milestone in rock_milestones
                     )
-                    if not overdue_milestone_exists:
+                    # A Rock can be effectively off-track because of an overdue
+                    # milestone even while its stored status remains on_track.
+                    # Complete Rocks stay complete regardless of old milestones.
+                    if (
+                        source_obj.status == Rock.Status.COMPLETE
+                        or not overdue_milestone_exists
+                    ):
                         raise ValidationError("Only off-track rocks can become issues")
 
                 dupes = Issue.filter(

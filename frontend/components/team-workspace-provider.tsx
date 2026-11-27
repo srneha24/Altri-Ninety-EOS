@@ -162,13 +162,16 @@ function mapMember(member: ApiMember): DemoUser {
 }
 
 function mapIssue(issue: ApiIssue): DemoIssue {
-  const source =
-    issue.source?.measurable_id && issue.source.week_start
-      ? {
-          measurableId: issue.source.measurable_id,
-          weekStart: issue.source.week_start,
-        }
-      : null
+  const source = issue.source?.measurable_id && issue.source.week_start
+    ? {
+        measurableId: issue.source.measurable_id,
+        weekStart: issue.source.week_start,
+      }
+    : issue.source?.rock_id
+      ? { rockId: issue.source.rock_id }
+      : issue.source?.todo_id
+        ? { todoId: issue.source.todo_id }
+        : null
   return {
     id: issue.id,
     title: issue.title,
@@ -478,10 +481,14 @@ export function TeamWorkspaceProvider({
           title: source ? undefined : title,
           priority,
           source: source
-            ? {
-                measurable_id: source.measurableId,
-                week_start: source.weekStart,
-              }
+            ? "measurableId" in source
+              ? {
+                  measurable_id: source.measurableId,
+                  week_start: source.weekStart,
+                }
+              : "rockId" in source
+                ? { rock_id: source.rockId }
+                : { todo_id: source.todoId }
             : undefined,
         })
         const mapped = mapIssue(issue)

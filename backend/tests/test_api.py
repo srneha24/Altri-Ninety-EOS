@@ -1,14 +1,14 @@
 import asyncio
-from datetime import date, timedelta
 import unittest
+from datetime import date, timedelta
 
 import httpx
 from main import app
-from models import Issue, Meeting, MeetingAttendee, Rock, Score, Team, Todo
+from models import Issue, Meeting, MeetingAttendee, Milestone, Rock, Score, Team, Todo
 from models._base_db_model import BaseModel
+from rules_report import build_team_report
 from tortoise import connections
 from tortoise.exceptions import IntegrityError
-from rules_report import build_team_report
 from utils.clock import freeze_app_now, get_app_now, reset_app_clock
 from utils.tokens import _create_access_token
 
@@ -65,8 +65,12 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
         created_id = None
         try:
             r1, r2 = await asyncio.gather(
-                self.client.post("/traction/teams/team_lead/issues", headers=headers, json=payload),
-                self.client.post("/traction/teams/team_lead/issues", headers=headers, json=payload),
+                self.client.post(
+                    "/traction/teams/team_lead/issues", headers=headers, json=payload
+                ),
+                self.client.post(
+                    "/traction/teams/team_lead/issues", headers=headers, json=payload
+                ),
             )
             self.assertIn(r1.status_code, (200, 201))
             self.assertIn(r2.status_code, (200, 201))
@@ -110,10 +114,146 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
             if created_ids:
                 await Issue.filter(id__in=created_ids).delete()
 
+    async def test_overdue_todo_issue_is_deduplicated_and_reopens_after_solve(self):
+        payload = {"source": {"todo_id": "t12"}}
+        headers = self._auth_headers("u2")
+        created_ids: list[str] = []
+        try:
+            first, duplicate = await asyncio.gather(
+                self.client.post(
+                    "/traction/teams/team_lead/issues", headers=headers, json=payload
+                ),
+                self.client.post(
+                    "/traction/teams/team_lead/issues", headers=headers, json=payload
+                ),
+            )
+            self.assertIn(first.status_code, (200, 201), first.text)
+            self.assertIn(duplicate.status_code, (200, 201), duplicate.text)
+            first_data = first.json()["data"]
+            duplicate_data = duplicate.json()["data"]
+            created_ids.append(first_data["id"])
+            self.assertEqual(first_data["id"], duplicate_data["id"])
+            self.assertEqual(first_data["source"]["todo_id"], "t12")
+            self.assertEqual(first_data["title"], "Publish hiring ad")
+
+            solved = await self.client.patch(
+                f"/traction/teams/team_lead/issues/{first_data['id']}",
+                headers=headers,
+                json={"resolution_note": "Handled"},
+            )
+            self.assertEqual(solved.status_code, 200, solved.text)
+
+            reopened = await self.client.post(
+                "/traction/teams/team_lead/issues", headers=headers, json=payload
+            )
+            self.assertIn(reopened.status_code, (200, 201), reopened.text)
+            reopened_id = reopened.json()["data"]["id"]
+            created_ids.append(reopened_id)
+            self.assertNotEqual(first_data["id"], reopened_id)
+
+            future_todo = await self.client.post(
+                "/traction/teams/team_lead/issues",
+                headers=headers,
+                json={"source": {"todo_id": "t32"}},
+            )
+            self.assertEqual(future_todo.status_code, 400)
+
+            completed_todo = await self.client.post(
+                "/traction/teams/team_lead/issues",
+                headers=headers,
+                json={"source": {"todo_id": "t1"}},
+            )
+            self.assertEqual(completed_todo.status_code, 400)
+
+            cross_team_todo = await self.client.post(
+                "/traction/teams/team_lead/issues",
+                headers=headers,
+                json={"source": {"todo_id": "t40"}},
+            )
+            self.assertEqual(cross_team_todo.status_code, 400)
+        finally:
+            if created_ids:
+                await Issue.filter(id__in=created_ids).delete()
+
+    async def test_off_track_rock_issue_checks_effective_status_and_deduplicates(self):
+        headers = self._auth_headers("u2")
+        rock = await Rock.create(
+            id="r_bonus",
+            title="Bonus off-track Rock",
+            quarter="2026-Q4",
+            status=Rock.Status.ON_TRACK,
+            owner_id="u2",
+            team_id="team_lead",
+        )
+        overdue = await Milestone.create(
+            id="ms_bonus",
+            title="Overdue milestone",
+            due_date=date(2026, 11, 10),
+            done=False,
+            rock_id=rock.id,
+        )
+        complete_rock = await Rock.create(
+            id="r_bonus_complete",
+            title="Complete Rock",
+            quarter="2026-Q4",
+            status=Rock.Status.COMPLETE,
+            owner_id="u2",
+            team_id="team_lead",
+        )
+        complete_milestone = await Milestone.create(
+            id="ms_bonus_complete",
+            title="Old milestone",
+            due_date=date(2026, 11, 1),
+            done=False,
+            rock_id=complete_rock.id,
+        )
+        created_id = None
+        try:
+            payload = {"source": {"rock_id": rock.id}}
+            first, duplicate = await asyncio.gather(
+                self.client.post(
+                    "/traction/teams/team_lead/issues", headers=headers, json=payload
+                ),
+                self.client.post(
+                    "/traction/teams/team_lead/issues", headers=headers, json=payload
+                ),
+            )
+            self.assertIn(first.status_code, (200, 201), first.text)
+            self.assertIn(duplicate.status_code, (200, 201), duplicate.text)
+            first_data = first.json()["data"]
+            created_id = first_data["id"]
+            self.assertEqual(first_data["id"], duplicate.json()["data"]["id"])
+            self.assertEqual(first_data["source"]["rock_id"], rock.id)
+            self.assertEqual(first_data["title"], rock.title)
+
+            completed_rock_response = await self.client.post(
+                "/traction/teams/team_lead/issues",
+                headers=headers,
+                json={"source": {"rock_id": complete_rock.id}},
+            )
+            self.assertEqual(completed_rock_response.status_code, 400)
+
+            rock_without_overdue_milestone = await self.client.post(
+                "/traction/teams/team_lead/issues",
+                headers=headers,
+                json={"source": {"rock_id": "r4"}},
+            )
+            self.assertEqual(rock_without_overdue_milestone.status_code, 400)
+
+            cross_team_rock = await self.client.post(
+                "/traction/teams/team_lead/issues",
+                headers=headers,
+                json={"source": {"rock_id": "r6"}},
+            )
+            self.assertEqual(cross_team_rock.status_code, 400)
+        finally:
+            if created_id:
+                await Issue.filter(id=created_id).delete()
+            await Milestone.filter(id__in=[overdue.id, complete_milestone.id]).delete()
+            await Rock.filter(id__in=[rock.id, complete_rock.id]).delete()
+
     async def test_postgres_rejects_duplicate_unresolved_source_issue(self):
-        payload = {
-            "source": {"measurable_id": "m1", "week_start": "2025-02-03"}
-        }
+        payload = {"source": {"measurable_id": "m1", "week_start": "2025-02-03"}}
         response = await self.client.post(
             "/traction/teams/team_lead/issues",
             headers=self._auth_headers("u2"),
@@ -203,7 +343,9 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
         self.assertIn("progress_percent", rocks[0])
 
     async def test_admin_can_access_all_teams(self):
-        teams_resp = await self.client.get("/auth/teams", headers=self._auth_headers("u1"))
+        teams_resp = await self.client.get(
+            "/auth/teams", headers=self._auth_headers("u1")
+        )
         self.assertEqual(teams_resp.status_code, 200)
         team_ids = {t["id"] for t in teams_resp.json()["data"]["teams"]}
         self.assertTrue({"team_lead", "team_sales", "team_ops"}.issubset(team_ids))
@@ -317,7 +459,9 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 sorted(response.status_code for response in concurrent), [200, 400]
             )
-            first = next(response for response in concurrent if response.status_code == 200)
+            first = next(
+                response for response in concurrent if response.status_code == 200
+            )
             first_id = first.json()["data"]["id"]
 
             second = await start("team_lead", "u2")
@@ -367,7 +511,11 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
             todo_response = await self.client.post(
                 "/traction/teams/team_lead/todos",
                 headers=headers,
-                json={"title": "Snapshot todo", "owner_id": "u2", "source_issue_id": issue_id},
+                json={
+                    "title": "Snapshot todo",
+                    "owner_id": "u2",
+                    "source_issue_id": issue_id,
+                },
             )
             self.assertEqual(todo_response.status_code, 201, todo_response.text)
             todo_id = todo_response.json()["data"]["id"]
@@ -425,14 +573,9 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
             report = await build_team_report(team, get_app_now())
             self.assertEqual(
                 report["meetings"][meeting_id]["measurable_status"],
-                {
-                    item["id"]: item["status"]
-                    for item in saved_summary["measurables"]
-                },
+                {item["id"]: item["status"] for item in saved_summary["measurables"]},
             )
-            self.assertEqual(
-                report["meetings"][meeting_id]["todos_created"], [todo_id]
-            )
+            self.assertEqual(report["meetings"][meeting_id]["todos_created"], [todo_id])
             self.assertEqual(report["meetings"][meeting_id]["rating"], 9)
         finally:
             if reviewed_score and original_score is not None:
@@ -458,7 +601,7 @@ class TestTractionAPI(unittest.IsolatedAsyncioTestCase):
         on_track_issue = await self.client.post(
             "/traction/teams/team_lead/issues",
             headers=self._auth_headers("u2"),
-            json={"source": {"measurable_id": "m1", "week_start": "2026-08-17"}},
+            json={"source": {"measurable_id": "m1", "week_start": "2099-01-05"}},
         )
         self.assertEqual(on_track_issue.status_code, 400)
 
