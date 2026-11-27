@@ -117,6 +117,22 @@ export function MeetingPage() {
 
   useEffect(() => { void Promise.resolve().then(load); }, [load]);
   useEffect(() => {
+    if (loading || meeting) return;
+
+    const pollActiveMeeting = async () => {
+      try {
+        syncMeetingState(await getActiveMeeting(selectedTeamId));
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 404)) {
+          setNotice(errorMessage(error));
+        }
+      }
+    };
+
+    const id = window.setInterval(() => void pollActiveMeeting(), 1000);
+    return () => window.clearInterval(id);
+  }, [loading, meeting, selectedTeamId, syncMeetingState]);
+  useEffect(() => {
     if (!meeting) return;
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);

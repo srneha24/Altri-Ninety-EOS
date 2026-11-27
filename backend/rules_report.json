@@ -1,5 +1,5 @@
 {
-  "now": "2026-11-11T15:00:00.580442+00:00",
+  "now": "2026-11-11T15:00:00Z",
   "teams": {
     "team_lead": {
       "issue_order": [
@@ -53,7 +53,7 @@
           "2026-10-19": "on_track",
           "2026-10-26": "on_track",
           "2026-11-02": "off_track",
-          "2026-11-09": "on_track"
+          "2026-11-09": "pending"
         },
         "m4": {
           "2026-08-17": "on_track",
@@ -133,27 +133,6 @@
           "scorecard_week": "2026-10-26",
           "todos_created": [
             "t30"
-          ]
-        },
-        "mt_a9cf561a0f7e40": {
-          "attendee_ids": [
-            "u1",
-            "u2"
-          ],
-          "issues_solved": [
-            "i_39ebf7c8289b41"
-          ],
-          "measurable_status": {
-            "m1": "off_track",
-            "m2": "on_track",
-            "m3": "off_track",
-            "m4": "on_track",
-            "m5": "off_track"
-          },
-          "rating": null,
-          "scorecard_week": "2026-11-02",
-          "todos_created": [
-            "t_9ca4f84c19734c"
           ]
         }
       },

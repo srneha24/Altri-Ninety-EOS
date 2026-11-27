@@ -123,7 +123,9 @@ async def build_meeting_summary(meeting: Meeting) -> dict[str, Any]:
     avg_rating = compute_meeting_rating([attendee.rating for attendee in attendees])
 
     current_local_date = started_local_date
-    current_week_start = current_local_date - timedelta(days=current_local_date.weekday())
+    current_week_start = current_local_date - timedelta(
+        days=current_local_date.weekday()
+    )
     scores_by_measurable_id = {score.measurable_id: score for score in scores}
     measurable_summaries = []
     for measurable in measurables:
@@ -193,7 +195,14 @@ async def build_meeting_summary(meeting: Meeting) -> dict[str, Any]:
     }
 
 
-async def save_meeting_summary(meeting_id: str) -> None:
+async def save_meeting_summary(meeting_id: str) -> dict[str, Any]:
+    """
+    A persisted summary is a historical snapshot; never replace it with a
+    reconstruction from records that may have changed since the meeting.
+    """
     meeting = await Meeting.get(id=meeting_id).select_related("facilitator", "team")
+    if meeting.summary not in (None, {}):
+        return meeting.summary
     meeting.summary = await build_meeting_summary(meeting)
     await meeting.save(update_fields=["summary"])
+    return meeting.summary

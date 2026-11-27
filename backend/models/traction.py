@@ -3,6 +3,7 @@ from typing import Any
 
 from tortoise import fields
 from tortoise.exceptions import ValidationError
+from tortoise.fields.base import OnDelete
 from tortoise.validators import MaxValueValidator, MinValueValidator
 from utils.clock import get_app_today
 
@@ -85,6 +86,33 @@ class Issue(BaseModel):
         null=True, default=None, validators=[IssueSourceValidator()]
     )
 
+    # Keep relational copies of the polymorphic JSON source so PostgreSQL can
+    # enforce source existence and same-team ownership with foreign keys.
+    source_measurable = fields.ForeignKeyField(
+        "models.Measurable",
+        related_name="source_issues",
+        null=True,
+        default=None,
+        db_constraint=False,
+        on_delete=OnDelete.RESTRICT,
+    )
+    source_rock = fields.ForeignKeyField(
+        "models.Rock",
+        related_name="source_issues",
+        null=True,
+        default=None,
+        db_constraint=False,
+        on_delete=OnDelete.RESTRICT,
+    )
+    source_todo = fields.ForeignKeyField(
+        "models.Todo",
+        related_name="source_issues",
+        null=True,
+        default=None,
+        db_constraint=False,
+        on_delete=OnDelete.RESTRICT,
+    )
+
     owner = fields.ForeignKeyField("models.User", related_name="issues", db_index=True)
     team = fields.ForeignKeyField("models.Team", related_name="issues", db_index=True)
 
@@ -94,6 +122,9 @@ class Issue(BaseModel):
     async def save(
         self, using_db=None, update_fields=None, force_create=False, force_update=False
     ):
+        self.source_measurable_id = (self.source or {}).get("measurable_id")
+        self.source_rock_id = (self.source or {}).get("rock_id")
+        self.source_todo_id = (self.source or {}).get("todo_id")
         if self.source:
             source_models: dict[str, BaseModel] = {
                 "measurable_id": Measurable,

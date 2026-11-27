@@ -79,7 +79,7 @@ async def upsert_measurable_score(
     payload: ScoreUpdatePayload,
     team_id: str = Path(...),
     measurable_id: str = Path(...),
-    week_start: date = Path(...),
+    week_start: date = Path(...),  # noqa: B008
 ):
     return await upsert_measurable_score_view(
         team_id=team_id,
@@ -116,9 +116,7 @@ async def update_issue(
     team_id: str = Path(...),
     issue_id: str = Path(...),
 ):
-    return await update_issue_view(
-        team_id=team_id, issue_id=issue_id, payload=payload
-    )
+    return await update_issue_view(team_id=team_id, issue_id=issue_id, payload=payload)
 
 
 @router.get("/teams/{team_id}/todos")

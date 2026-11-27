@@ -84,12 +84,12 @@ async def meeting_state_view(
         meeting.update_from_dict(
             {state_to_datetime_field_mapping.get(payload.state): get_app_now()}
         )
-        await meeting.save()
         if payload.state == MeetingState.END:
-            # Generate the summary synchronously so the END response only returns
-            # once the summary is persisted. This removes the 503 "Still Being
-            # Generated" window for clients polling right after END.
-            await save_meeting_summary(meeting.id)
+            async with in_transaction():
+                await meeting.save()
+                meeting.summary = await save_meeting_summary(meeting.id)
+        else:
+            await meeting.save()
 
     meeting.state = payload.state.value
     meeting.server_now = get_app_now()
@@ -256,7 +256,11 @@ async def get_active_meeting_view(team_id: str):
 
 async def _get_workspace_revision(
     team_id: str,
-) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
+) -> tuple[
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+]:
     latest_score = (
         await Score.filter(measurable__team_id=team_id).order_by("-updated_at").first()
     )
@@ -264,14 +268,22 @@ async def _get_workspace_revision(
     # same-tick updates can leave the maximum timestamp unchanged.
     issue_revisions = tuple(
         (row["id"], row["updated_at"].isoformat())
-        for row in await Issue.filter(team_id=team_id).order_by("id").values("id", "updated_at")
+        for row in await Issue.filter(team_id=team_id)
+        .order_by("id")
+        .values("id", "updated_at")
     )
     todo_revisions = tuple(
         (row["id"], row["updated_at"].isoformat())
-        for row in await Todo.filter(team_id=team_id).order_by("id").values("id", "updated_at")
+        for row in await Todo.filter(team_id=team_id)
+        .order_by("id")
+        .values("id", "updated_at")
     )
     return (
-        ((latest_score.id, latest_score.updated_at.isoformat()),) if latest_score else (),
+        (
+            ((latest_score.id, latest_score.updated_at.isoformat()),)
+            if latest_score
+            else ()
+        ),
         issue_revisions,
         todo_revisions,
     )

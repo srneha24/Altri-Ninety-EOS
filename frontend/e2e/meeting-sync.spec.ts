@@ -6,8 +6,17 @@ async function ensureNoActiveMeeting(request: import("@playwright/test").APIRequ
   const login = await request.post(`${API_URL}/auth/login`, {
     data: { email: "avery@acme.test" },
   });
-  if (!login.ok()) return;
-  const { token } = (await login.json()) as { token: { access_token: string } };
+  if (!login.ok()) {
+    throw new Error(`Could not log in the seeded facilitator: ${login.status()} ${await login.text()}`);
+  }
+  const response = (await login.json()) as {
+    data?: { token?: { access_token: string } };
+    token?: { access_token: string };
+  };
+  const token = response.data?.token ?? response.token;
+  if (!token) {
+    throw new Error("Seeded-account login response did not include an access token.");
+  }
   const headers = { Authorization: `Bearer ${token.access_token}` };
   const active = await request.get(`${API_URL}/traction/teams/team_lead/meetings/active`, {
     headers,
@@ -66,7 +75,7 @@ test("facilitator advances the agenda and second browser follows", async ({
     // Second attendee joins and appears on both attendee lists
     await attendeePage.getByRole("button", { name: /join meeting/i }).click();
     await expect(
-      facilitatorPage.getByText(/blake brooks/i),
+      facilitatorPage.getByText("Blake Brooks", { exact: true }),
     ).toBeVisible({ timeout: 10_000 });
 
     // Facilitator advances the agenda to IDS
@@ -84,14 +93,14 @@ test("facilitator advances the agenda and second browser follows", async ({
       .getByRole("button", { name: /advance agenda/i })
       .click();
     await expect(
-      attendeePage.getByRole("heading", { name: /^conclude$/i }),
+      attendeePage.getByRole("heading", { name: /^conclude$/i }).first(),
     ).toBeVisible({ timeout: 10_000 });
 
     await attendeePage.getByRole("button", { name: /submit rating/i }).click();
     await facilitatorPage.getByRole("button", { name: /end meeting/i }).click();
 
     await expect(
-      facilitatorPage.getByText(/ended meeting/i),
+      facilitatorPage.getByText("Ended meeting", { exact: true }),
     ).toBeVisible({ timeout: 10_000 });
   } finally {
     await facilitatorContext.close();

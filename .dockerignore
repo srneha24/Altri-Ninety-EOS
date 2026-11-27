@@ -1,6 +1,5 @@
 .mcp.json
 implementation-checklist.md
-*.ps1
 .vscode/*
 assessment-brief.md
 assessment-brief.docx

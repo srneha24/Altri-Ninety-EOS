@@ -14,7 +14,6 @@ from apps.traction.rules import (
     get_company_week_bounds,
     sort_issues,
 )
-from apps.traction.utils import build_meeting_summary
 from conf.database import TORTOISE_ORM
 from models import (
     Issue,
@@ -185,24 +184,31 @@ async def build_team_report(team: Team, now) -> dict:
     meetings_report = {}
 
     for meeting in meetings:
-        # Rebuild from the current database data instead of relying
-        # on a potentially stale persisted summary.
-        summary = await build_meeting_summary(meeting)
+        # Ended summaries are historical snapshots. A legacy meeting without
+        # one is reported with empty values rather than rebuilt from mutable rows.
+        summary = meeting.summary or {}
+        measurables_summary = summary.get("measurables", [])
+        issues_summary = summary.get("issues", {})
+        todos_summary = summary.get("todos", {})
 
         meetings_report[meeting.id] = {
-            "scorecard_week": summary["reviewed_week"],
+            "scorecard_week": summary.get("reviewed_week"),
             "measurable_status": {
                 measurable["id"]: measurable["status"]
-                for measurable in summary["measurables"]
+                for measurable in measurables_summary
             },
             "issues_solved": sorted(
-                issue["id"] for issue in summary["issues"]["solved"]
+                issue["id"] for issue in issues_summary.get("solved", [])
             ),
-            "todos_created": sorted(todo["id"] for todo in summary["todos"]["created"]),
+            "todos_created": sorted(
+                todo["id"] for todo in todos_summary.get("created", [])
+            ),
             "attendee_ids": sorted(
-                attendee["user"]["id"] for attendee in summary["attendees"]
+                attendee["user"]["id"]
+                for attendee in summary.get("attendees", [])
+                if attendee.get("user", {}).get("id") is not None
             ),
-            "rating": summary["average_rating"],
+            "rating": summary.get("average_rating"),
         }
 
     return {
@@ -230,7 +236,7 @@ async def generate_rules_report() -> dict:
         )
 
     return {
-        "now": now.isoformat(),
+        "now": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "teams": teams_report,
     }
 

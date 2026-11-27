@@ -68,7 +68,20 @@ class IssuesParams(BaseModel):
 
 
 _IssueResponseBase = pydantic_model_creator(
-    Issue, name="IssueResponseBase", exclude=("team", "team_id", "source", "todos")
+    Issue,
+    name="IssueResponseBase",
+    exclude=(
+        "team",
+        "team_id",
+        "source",
+        "source_measurable",
+        "source_measurable_id",
+        "source_rock",
+        "source_rock_id",
+        "source_todo",
+        "source_todo_id",
+        "todos",
+    ),
 )
 
 
@@ -165,7 +178,13 @@ _IssueMinimalResponse = pydantic_model_creator(
 _TodoResponseBase = pydantic_model_creator(
     Todo,
     name="TodoBase",
-    exclude=("team", "team_id", "source_issue", "source_issue_id"),
+    exclude=(
+        "team",
+        "team_id",
+        "source_issue",
+        "source_issue_id",
+        "source_issues",
+    ),
 )
 
 
@@ -204,7 +223,9 @@ MilestoneResponse = pydantic_model_creator(
 )
 
 _RockResponseBase = pydantic_model_creator(
-    Rock, name="RockResponse", exclude=("team", "team_id")
+    Rock,
+    name="RockResponse",
+    exclude=("team", "team_id", "source_issues"),
 )
 
 

@@ -38,10 +38,22 @@ from ..schemas import (
 
 
 async def get_scorecard_view(team_id: str, params: ScorecardParams):
-    scores = Score.filter(
-        week_start__gte=params.start_date,
-        week_start__lte=params.end_date,
-    ).order_by("week_start")
+    first_monday = params.start_date + timedelta(
+        days=(7 - params.start_date.weekday()) % 7
+    )
+    weeks: list[date] = []
+    cursor = first_monday
+    while cursor <= params.end_date:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+
+    if weeks:
+        scores = Score.filter(
+            week_start__gte=weeks[0],
+            week_start__lte=weeks[-1],
+        ).order_by("week_start")
+    else:
+        scores = Score.filter(id__in=[])
 
     query = (
         Measurable.filter(team_id=team_id)
@@ -58,14 +70,6 @@ async def get_scorecard_view(team_id: str, params: ScorecardParams):
     results = await query
     today = await get_app_today(team_id=team_id)
     current_week_start = today - timedelta(days=today.weekday())
-    first_monday = params.start_date + timedelta(
-        days=(7 - params.start_date.weekday()) % 7
-    )
-    weeks: list[date] = []
-    cursor = first_monday
-    while cursor <= params.end_date:
-        weeks.append(cursor)
-        cursor += timedelta(days=7)
 
     serialized = []
     for result in results:
@@ -269,12 +273,6 @@ async def create_issue_view(team_id: str, user_id: str, payload: IssueCreatePayl
                     source_id=source_id,
                 )
             except (IntegrityError, ValidationError):
-                # DB unique-index violation (IntegrityError) or the app-level
-                # duplicate check raised by Issue.save() (ValidationError) both
-                # mean a concurrent worker created the same source issue. Return
-                # the existing issue instead of surfacing a 400 or creating a
-                # duplicate. This makes the fallback robust across workers when
-                # the in-process lock does not serialize the race.
                 existing_issue = (
                     await Issue.filter(
                         team_id=team_id,
@@ -465,7 +463,12 @@ async def get_todos_view(team_id: str, params: TodoParams):
                 **(
                     completion
                     if completion is not None
-                    else {"due": 0, "done": 0, "rate_percent": None, "meets_target": None}
+                    else {
+                        "due": 0,
+                        "done": 0,
+                        "rate_percent": None,
+                        "meets_target": None,
+                    }
                 ),
             },
         }
@@ -553,9 +556,7 @@ async def get_quarterly_rocks_view(team_id: str, params: QuarterlyRockParams):
         milestones_data = [
             {"done": m.done, "due_date": m.due_date} for m in rock.milestones
         ]
-        computed_status = compute_rock_status(
-            rock.status.value, milestones_data, today
-        )
+        computed_status = compute_rock_status(rock.status.value, milestones_data, today)
         if params.status and computed_status != params.status.value:
             continue
         progress_percent = compute_rock_progress(rock.status.value, milestones_data)
