@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { SelectMenu } from "@/components/ui/select-menu"
 import { TeamWorkspaceProvider } from "@/components/team-workspace-provider"
-import { getCurrentUser, getUserTeams, type ApiUser } from "@/lib/api"
+import { getCurrentUser, getServerNow, getUserTeams, type ApiUser } from "@/lib/api"
 import { clearTokens, getRefreshToken, refreshSession } from "@/lib/auth"
 import type { DemoRole, DemoTeam, DemoUser } from "@/lib/types"
 import { WorkspaceIdentityProvider } from "@/lib/workspace-identity"
@@ -52,6 +52,7 @@ export function WorkspaceShell({
   const pathname = usePathname()
   const [isReady, setIsReady] = useState(false)
   const [currentUser, setCurrentUser] = useState<DemoUser | null>(null)
+  const [serverNow, setServerNow] = useState<string | undefined>(undefined)
   const [teams, setTeams] = useState<DemoTeam[]>([])
   const [selectedTeamId, setSelectedTeamId] = useState("")
   const [workspaceError, setWorkspaceError] = useState<string | null>(null)
@@ -79,12 +80,14 @@ export function WorkspaceShell({
       }
 
       try {
-        const [user, availableTeams] = await Promise.all([
+        const [user, availableTeams, serverNowPayload] = await Promise.all([
           getCurrentUser(),
           getUserTeams(),
+          getServerNow(),
         ])
         if (active) {
           setCurrentUser(mapUser(user))
+          setServerNow(serverNowPayload.server_now)
           setTeams(
             availableTeams.map((team) => ({
               ...team,
@@ -152,6 +155,7 @@ export function WorkspaceShell({
     currentUser && selectedTeamId ? (
       <TeamWorkspaceProvider
         selectedTeamId={selectedTeamId}
+        serverNow={serverNow}
         teams={teams}
         user={currentUser}
       >

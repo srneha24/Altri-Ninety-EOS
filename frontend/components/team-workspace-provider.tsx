@@ -14,6 +14,7 @@ import {
 import {
   createIssue as createIssueRequest,
   createTodo as createTodoRequest,
+  getActiveMeeting,
   getIssues,
   getQuarterlyRocks,
   getScorecard,
@@ -29,6 +30,9 @@ import {
   type ApiRock,
   type ApiTodo,
 } from "@/lib/api"
+import { ApiError } from "@/lib/api-client"
+import { getAccessToken, refreshSession } from "@/lib/auth"
+import { readMeetingEventStream } from "@/lib/meeting-sse"
 import {
   APP_NOW,
   type DemoIssue,
@@ -86,6 +90,7 @@ type TeamWorkspaceProviderProps = {
   user: DemoUser
   teams: DemoTeam[]
   selectedTeamId: string
+  serverNow?: string
   children: ReactNode
 }
 
@@ -93,7 +98,7 @@ const TeamWorkspaceContext = createContext<TeamWorkspaceContextValue | null>(
   null
 )
 
-function companyDateParts(): {
+function companyDateParts(nowIso?: string): {
   year: number
   month: number
   day: number
@@ -103,7 +108,7 @@ function companyDateParts(): {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).formatToParts(new Date(APP_NOW))
+  }).formatToParts(new Date(nowIso ?? APP_NOW))
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]))
 
   return {
@@ -126,8 +131,8 @@ function mondayOf(date: string): string {
   return value.toISOString().slice(0, 10)
 }
 
-function getTeamDates(): { today: string; weeks: string[] } {
-  const { year, month, day } = companyDateParts()
+function getTeamDates(nowIso?: string): { today: string; weeks: string[] } {
+  const { year, month, day } = companyDateParts(nowIso)
   const today = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
   const currentWeek = mondayOf(today)
   return {
@@ -138,8 +143,8 @@ function getTeamDates(): { today: string; weeks: string[] } {
   }
 }
 
-function currentQuarter(): string {
-  const { year, month } = companyDateParts()
+function currentQuarter(nowIso?: string): string {
+  const { year, month } = companyDateParts(nowIso)
   return `${year}-Q${Math.ceil(month / 3)}`
 }
 
@@ -225,14 +230,14 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "The request failed."
 }
 
-async function loadTeamData(teamId: string) {
-  const dates = getTeamDates()
+async function loadTeamData(teamId: string, nowIso?: string) {
+  const dates = getTeamDates(nowIso)
   const [members, scorecard, issues, todos, rocks] = await Promise.all([
     getTeamMembers(teamId),
     getScorecard(teamId, dates.weeks[0], dates.weeks[12]),
     getIssues(teamId),
     getTodos(teamId),
-    getQuarterlyRocks(teamId, currentQuarter()),
+    getQuarterlyRocks(teamId, currentQuarter(nowIso)),
   ])
   return { dates, members, scorecard, issues, todos, rocks }
 }
@@ -241,6 +246,7 @@ export function TeamWorkspaceProvider({
   user,
   teams,
   selectedTeamId,
+  serverNow,
   children,
 }: TeamWorkspaceProviderProps) {
   const [members, setMembers] = useState<DemoUser[]>([])
@@ -303,16 +309,19 @@ export function TeamWorkspaceProvider({
 
   const refreshWorkspace = useCallback(async () => {
     if (!selectedTeam) return
-    const request = requestId.current
+    // A refresh must supersede every prior load. In particular, this prevents
+    // an older request which started before another attendee changed an Issue
+    // from overwriting the newer, SSE-triggered response when it finishes.
+    const request = ++requestId.current
     try {
-      const data = await loadTeamData(selectedTeam.id)
+      const data = await loadTeamData(selectedTeam.id, serverNow)
       if (request !== requestId.current) return
       applyLoadedData(data)
     } catch (refreshError) {
       if (request !== requestId.current) return
       setError(getErrorMessage(refreshError))
     }
-  }, [applyLoadedData, selectedTeam])
+  }, [applyLoadedData, selectedTeam, serverNow])
 
   useEffect(() => {
     if (!selectedTeam) return
@@ -324,7 +333,7 @@ export function TeamWorkspaceProvider({
         setLoading(true)
         setLoaded(false)
         setError(null)
-        return loadTeamData(selectedTeam.id)
+        return loadTeamData(selectedTeam.id, serverNow)
       })
       .then((data) => {
         if (!data) return
@@ -340,7 +349,81 @@ export function TeamWorkspaceProvider({
     return () => {
       requestId.current += 1
     }
-  }, [applyLoadedData, selectedTeam])
+  }, [applyLoadedData, selectedTeam, serverNow])
+
+  // Refresh workspace data when the tab regains visibility so that changes
+  // made by other users (e.g. an Issue solved in a meeting) are picked up even
+  // if the SSE workspace_updated event was missed while the tab was hidden.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshWorkspace()
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () =>
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange
+      )
+  }, [refreshWorkspace])
+
+  // The workspace is mounted for both the Team and Meeting routes. Keep the
+  // meeting stream here (rather than only on the Meeting page) so every open
+  // workspace for this team receives changes made by another attendee.
+  useEffect(() => {
+    if (!selectedTeam) return
+
+    const controller = new AbortController()
+    let retry: number | undefined
+
+    const reconnect = (delay: number) => {
+      if (!controller.signal.aborted) {
+        retry = window.setTimeout(() => void connect(), delay)
+      }
+    }
+
+    async function connect(): Promise<void> {
+      try {
+        const activeMeeting = await getActiveMeeting(selectedTeam.id)
+        // Close the discovery-to-subscription gap with a fresh snapshot. Any
+        // subsequent mutation is delivered by the stream below.
+        void refreshWorkspace()
+        let token = getAccessToken()
+        if (!token) {
+          token = (await refreshSession()).access_token
+        }
+
+        await readMeetingEventStream(
+          selectedTeam.id,
+          activeMeeting.id,
+          token,
+          controller.signal,
+          {
+            onMeetingState: () => undefined,
+            onWorkspaceUpdated: () => void refreshWorkspace(),
+            onUnavailable: () => undefined,
+          }
+        )
+        reconnect(1000)
+      } catch (streamError) {
+        if (controller.signal.aborted) return
+        // No active meeting is an expected steady state. Poll lightly so a
+        // tab already open on Team joins the stream when one starts.
+        reconnect(
+          streamError instanceof ApiError && streamError.status === 404
+            ? 1000
+            : 3000
+        )
+      }
+    }
+
+    void connect()
+    return () => {
+      controller.abort()
+      if (retry) window.clearTimeout(retry)
+    }
+  }, [refreshWorkspace, selectedTeam])
 
   const withMutationError = useCallback(
     async <T,>(action: () => Promise<T>): Promise<T> => {

@@ -5,6 +5,7 @@ from .actions import (  # noqa: F401
     IssueUpdatePayload,
     QuarterlyRockParams,
     QuarterlyRockResponse,
+    ScorecardCellResponse,
     ScorecardParams,
     ScorecardResponse,
     ScoreResponse,

@@ -1,4 +1,5 @@
 import type { ApiMeeting } from "@/lib/api"
+import { ApiError } from "@/lib/api-client"
 
 function getApiBaseUrl(): string {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL?.trim()
@@ -27,7 +28,7 @@ export async function readMeetingEventStream(
     }
   )
   if (!response.ok || !response.body) {
-    throw new Error(`Meeting stream failed with status ${response.status}.`)
+    throw new ApiError(`Meeting stream failed with status ${response.status}.`, response.status)
   }
 
   const reader = response.body.getReader()

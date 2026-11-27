@@ -1,5 +1,5 @@
-from datetime import UTC, date, datetime
 import unittest
+from datetime import UTC, date, datetime
 
 from apps.traction.rules import (
     compute_measurable_status,
@@ -81,6 +81,31 @@ class TestBusinessRules(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["rate_percent"], 90)
         self.assertTrue(result["meets_target"])
+
+        # Sub-second before midnight Sunday (2026-11-09 05:59:59.500Z == Sunday 23:59:59.500 CST) counts on time;
+        # Monday 00:00:00Z CST (2026-11-09 06:00:00Z) counts late.
+        boundary_todos = [
+            {"due_date": date(2026, 11, 6), "done_at": datetime(2026, 11, 9, 5, 59, 59, 500000, tzinfo=UTC)},
+            {"due_date": date(2026, 11, 6), "done_at": datetime(2026, 11, 9, 6, 0, 0, 0, tzinfo=UTC)},
+        ]
+        boundary_result = compute_todo_completion(boundary_todos, week_start, week_end_utc)
+        self.assertIsNotNone(boundary_result)
+        self.assertEqual(boundary_result["done"], 1)
+        self.assertEqual(boundary_result["rate_percent"], 50)
+        self.assertFalse(boundary_result["meets_target"])
+
+        # 179/200 = 89.5% rounds half-up to 90%, but exact ratio is < 90% so meets_target is False
+        rounded_90_todos = [
+            {"due_date": date(2026, 11, 6), "done_at": datetime(2026, 11, 8, 12, 0, tzinfo=UTC)}
+            for _ in range(179)
+        ] + [
+            {"due_date": date(2026, 11, 6), "done_at": None}
+            for _ in range(21)
+        ]
+        rounded_90_result = compute_todo_completion(rounded_90_todos, week_start, week_end_utc)
+        self.assertIsNotNone(rounded_90_result)
+        self.assertEqual(rounded_90_result["rate_percent"], 90)
+        self.assertFalse(rounded_90_result["meets_target"])
 
     def test_rock_status_and_boundaries(self):
         today = date(2026, 11, 11)

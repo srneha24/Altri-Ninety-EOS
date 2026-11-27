@@ -19,11 +19,11 @@ def round_half_up_1dp(value: float | Decimal) -> float:
 def get_company_week_bounds(
     day: date, tz_name: str = DEFAULT_TZ
 ) -> tuple[date, datetime]:
-    """Return (week_start_monday, week_end_utc) for the week containing `day`."""
+    """Return (week_start_monday, next_week_start_utc) for the week containing `day`."""
     tz = ZoneInfo(tz_name)
     week_start = day - timedelta(days=day.weekday())
     next_week_start = week_start + timedelta(days=7)
-    week_end_local = datetime(
+    next_week_start_local = datetime(
         next_week_start.year,
         next_week_start.month,
         next_week_start.day,
@@ -31,8 +31,8 @@ def get_company_week_bounds(
         0,
         0,
         tzinfo=tz,
-    ) - timedelta(seconds=1)
-    return week_start, week_end_local.astimezone(UTC)
+    )
+    return week_start, next_week_start_local.astimezone(UTC)
 
 
 def compute_measurable_status(
@@ -78,7 +78,7 @@ def compute_todo_completion(
     done_on_time = 0
     for todo in due_in_week:
         done_at: datetime | None = todo.get("done_at")
-        if done_at is not None and done_at.astimezone(tz) <= week_end_utc.astimezone(
+        if done_at is not None and done_at.astimezone(tz) < week_end_utc.astimezone(
             tz
         ):
             done_on_time += 1

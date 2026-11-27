@@ -67,5 +67,4 @@ export type DemoRock = {
   milestones: DemoMilestone[]
 }
 
-export const APP_NOW =
-  process.env.NEXT_PUBLIC_APP_NOW ?? "2026-11-11T15:00:00Z"
+export const APP_NOW = "2026-11-11T15:00:00Z"

@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any
 
 from models import Issue, Milestone, Rock, Score, Todo, User
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from tortoise.contrib.pydantic import pydantic_model_creator
 
 
@@ -24,6 +24,13 @@ ScoreResponse = pydantic_model_creator(
 _OwnerResponse = pydantic_model_creator(User, name="Owner", include=("id", "name"))
 
 
+class ScorecardCellResponse(BaseModel):
+    week_start: date
+    score_id: str | None = None
+    value: float | None = None
+    status: str
+
+
 class ScorecardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +40,7 @@ class ScorecardResponse(BaseModel):
     goal: dict[str, Any]
     owner: _OwnerResponse  # type: ignore
     scores: list[ScoreResponse]  # type: ignore
+    cells: list[ScorecardCellResponse] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -108,6 +116,11 @@ class IssueCreatePayload(BaseModel):
 
     @model_validator(mode="after")
     def check_title_and_source_states(self) -> "IssueCreatePayload":
+        if self.title is not None:
+            stripped = self.title.strip()
+            if not stripped:
+                raise ValueError("title cannot be blank")
+            self.title = stripped
         if not self.title and not self.source:
             raise ValueError("title needs to be set if there is no source")
         return self
@@ -117,6 +130,19 @@ class IssueUpdatePayload(BaseModel):
     title: str | None = Field(None)
     priority: int | None = Field(None, ge=1, le=5)
     resolution_note: str | None = Field(None)
+
+    @model_validator(mode="after")
+    def validate_non_blank_fields(self) -> "IssueUpdatePayload":
+        if "title" in self.model_fields_set:
+            if self.title is None or not self.title.strip():
+                raise ValueError("title cannot be null or blank")
+            self.title = self.title.strip()
+        if "resolution_note" in self.model_fields_set and self.resolution_note is not None:
+            stripped = self.resolution_note.strip()
+            if not stripped:
+                raise ValueError("resolution_note cannot be blank")
+            self.resolution_note = stripped
+        return self
 
 
 class TodoParams(BaseModel):
@@ -146,12 +172,21 @@ _TodoResponseBase = pydantic_model_creator(
 class TodoResponse(_TodoResponseBase):
     issue: _IssueMinimalResponse | None = Field(default=None, validation_alias="source_issue")  # type: ignore
     owner: _OwnerResponse  # type: ignore
+    overdue: bool = False
 
 
 class TodoCreatePayload(BaseModel):
-    title: str = Field(...)
+    title: str = Field(..., min_length=1)
     source_issue_id: str | None = Field(None)
     owner_id: str = Field(...)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title_non_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("title cannot be blank")
+        return stripped
 
 
 class TodoUpdatePayload(BaseModel):
@@ -176,3 +211,4 @@ _RockResponseBase = pydantic_model_creator(
 class QuarterlyRockResponse(_RockResponseBase):
     owner: _OwnerResponse  # type: ignore
     milestones: list[MilestoneResponse] = Field(default_factory=list)  # type: ignore
+    progress_percent: int = 0

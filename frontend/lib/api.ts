@@ -1,11 +1,12 @@
-import { getAccessToken } from "@/lib/auth"
-import { apiRequest } from "@/lib/api-client"
+import { clearTokens, getAccessToken, refreshSession, type AuthTokens } from "@/lib/auth"
+import { ApiError, apiRequest } from "@/lib/api-client"
 import type { DemoRole, Goal } from "@/lib/types"
 
 export type ApiUser = {
   id: string
   name: string
   role: DemoRole
+  now?: string
 }
 
 export type ApiTeam = {
@@ -28,6 +29,12 @@ export type ApiMeasurable = {
   goal: Goal
   owner: Pick<ApiUser, "id" | "name">
   scores: ApiScore[]
+  cells?: Array<{
+    week_start: string
+    score_id: string | null
+    value: number | null
+    status: "on_track" | "off_track" | "pending"
+  }>
 }
 
 export type ApiIssueSource = {
@@ -55,6 +62,7 @@ export type ApiTodo = {
   due_date: string
   done_at: string | null
   created_at: string
+  overdue?: boolean
   issue: { id: string; title: string } | null
   owner: Pick<ApiUser, "id" | "name">
 }
@@ -71,6 +79,7 @@ export type ApiRock = {
   title: string
   quarter: string
   status: "on_track" | "off_track" | "complete"
+  progress_percent?: number
   owner: Pick<ApiUser, "id" | "name">
   milestones: ApiMilestone[]
 }
@@ -119,19 +128,60 @@ export type ApiMeetingSummary = {
   attendees: ApiMeetingAttendee[]
 }
 
+let refreshPromise: Promise<AuthTokens> | null = null
+
+async function getRefreshedTokens(): Promise<AuthTokens> {
+  if (!refreshPromise) {
+    refreshPromise = refreshSession().finally(() => {
+      refreshPromise = null
+    })
+  }
+  return refreshPromise
+}
+
 async function authenticatedRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
   const accessToken = getAccessToken()
   if (!accessToken) {
-    throw new Error("Your session has expired. Please sign in.")
+    try {
+      const tokens = await getRefreshedTokens()
+      return await apiRequest<T>(path, init, tokens.access_token)
+    } catch {
+      clearTokens()
+      if (typeof window !== "undefined") {
+        window.location.replace("/login?session=expired")
+      }
+      throw new Error("Your session has expired. Please sign in.")
+    }
   }
-  return apiRequest<T>(path, init, accessToken)
+
+  try {
+    return await apiRequest<T>(path, init, accessToken)
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      try {
+        const tokens = await getRefreshedTokens()
+        return await apiRequest<T>(path, init, tokens.access_token)
+      } catch {
+        clearTokens()
+        if (typeof window !== "undefined") {
+          window.location.replace("/login?session=expired")
+        }
+        throw new Error("Your session has expired. Please sign in.")
+      }
+    }
+    throw error
+  }
 }
 
 export function getCurrentUser(): Promise<ApiUser> {
   return authenticatedRequest("/auth/me")
+}
+
+export function getServerNow(): Promise<{ server_now: string }> {
+  return apiRequest<{ server_now: string }>("/auth/server-now")
 }
 
 export async function getUserTeams(): Promise<ApiTeam[]> {

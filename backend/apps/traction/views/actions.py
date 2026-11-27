@@ -7,10 +7,17 @@ from models import Issue, Measurable, Membership, Rock, Score, Todo, User
 from tortoise.exceptions import DoesNotExist, IntegrityError, ValidationError
 from tortoise.models import Model
 from tortoise.query_utils import Prefetch
-from utils.clock import get_app_now, get_app_today
+from utils.clock import get_app_now, get_app_today, get_cached_tz
 from utils.json_actions import simplify_json
 
-from ..rules import compute_rock_status
+from ..rules import (
+    compute_measurable_status,
+    compute_rock_progress,
+    compute_rock_status,
+    compute_todo_completion,
+    get_company_week_bounds,
+    sort_issues,
+)
 from ..schemas import (
     IssueCreatePayload,
     IssueResponse,
@@ -18,6 +25,7 @@ from ..schemas import (
     IssueUpdatePayload,
     QuarterlyRockParams,
     QuarterlyRockResponse,
+    ScorecardCellResponse,
     ScorecardParams,
     ScorecardResponse,
     ScoreResponse,
@@ -48,14 +56,42 @@ async def get_scorecard_view(team_id: str, params: ScorecardParams):
     )
 
     results = await query
-    return CustomJSONResponse(
-        content={
-            "data": [
-                simplify_json(ScorecardResponse.model_validate(result).model_dump())
-                for result in results
-            ]
-        }
+    today = await get_app_today(team_id=team_id)
+    current_week_start = today - timedelta(days=today.weekday())
+    first_monday = params.start_date + timedelta(
+        days=(7 - params.start_date.weekday()) % 7
     )
+    weeks: list[date] = []
+    cursor = first_monday
+    while cursor <= params.end_date:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+
+    serialized = []
+    for result in results:
+        scores_by_week = {score.week_start: score for score in result.scores}
+        cells = []
+        for week_start in weeks:
+            score = scores_by_week.get(week_start)
+            status = compute_measurable_status(
+                result.goal,
+                score.value if score is not None else None,
+                week_start,
+                current_week_start,
+            )
+            cells.append(
+                ScorecardCellResponse(
+                    week_start=week_start,
+                    score_id=score.id if score is not None else None,
+                    value=score.value if score is not None else None,
+                    status=status,
+                )
+            )
+        item = ScorecardResponse.model_validate(result)
+        item.cells = cells
+        serialized.append(simplify_json(item.model_dump()))
+
+    return CustomJSONResponse(content={"data": serialized})
 
 
 async def update_measurable_score_view(
@@ -159,6 +195,17 @@ async def get_issues_view(team_id: str, params: IssuesParams):
 
         results.append(simplify_json(IssueResponse.model_validate(result).model_dump()))
 
+    if params.order_by == IssuesParams.OrderBy.PRIORITY_DESC:
+        results = sort_issues(results)
+    elif params.order_by == IssuesParams.OrderBy.PRIORITY_ASC:
+        results.sort(
+            key=lambda issue: (
+                issue.get("priority") is None,
+                issue.get("priority") or 0,
+                issue["created_at"],
+            )
+        )
+
     return CustomJSONResponse(content=results)
 
 
@@ -221,7 +268,13 @@ async def create_issue_view(team_id: str, user_id: str, payload: IssueCreatePayl
                     issue_source_key=issue_source_key,
                     source_id=source_id,
                 )
-            except IntegrityError:
+            except (IntegrityError, ValidationError):
+                # DB unique-index violation (IntegrityError) or the app-level
+                # duplicate check raised by Issue.save() (ValidationError) both
+                # mean a concurrent worker created the same source issue. Return
+                # the existing issue instead of surfacing a 400 or creating a
+                # duplicate. This makes the fallback robust across workers when
+                # the in-process lock does not serialize the race.
                 existing_issue = (
                     await Issue.filter(
                         team_id=team_id,
@@ -276,18 +329,34 @@ async def _create_issue_record(
     issue_source_key: str = "",
     source_id: str = "",
 ):
-    if payload.source and source_model_mapping:  # noqa: SIM102
-        if True:
-            source_model = source_model_mapping.get(issue_source_key)
-            try:
-                source = await source_model.get(id=source_id)
-                payload.title = (
-                    f"{source.name}, week of {payload.source.week_start.strftime('%b %d')}"
-                    if issue_source_key == "measurable_id"
-                    else source.title
+    if payload.source and source_model_mapping:
+        source_model = source_model_mapping.get(issue_source_key)
+        try:
+            source = await source_model.get(id=source_id, team_id=team_id)
+            if issue_source_key == "measurable_id":
+                today = await get_app_today(team_id=team_id)
+                current_week_start = today - timedelta(days=today.weekday())
+                score = await Score.get_or_none(
+                    measurable_id=source_id, week_start=payload.source.week_start
                 )
-            except DoesNotExist:
-                raise HTTPException(detail="source Does Not Exist", status_code=400)
+                status = compute_measurable_status(
+                    source.goal,
+                    score.value if score is not None else None,
+                    payload.source.week_start,
+                    current_week_start,
+                )
+                if status != "off_track":
+                    raise HTTPException(
+                        detail="Only off-track measurables can become issues",
+                        status_code=400,
+                    )
+            payload.title = (
+                f"{source.name}, week of {payload.source.week_start.strftime('%b %d')}"
+                if issue_source_key == "measurable_id"
+                else source.title
+            )
+        except DoesNotExist:
+            raise HTTPException(detail="source Does Not Exist", status_code=400)
 
     try:
         issue = await Issue.create(
@@ -369,9 +438,37 @@ async def get_todos_view(team_id: str, params: TodoParams):
     if params.owner_id:
         query = query.filter(owner_id=params.owner_id)
 
+    today = await get_app_today(team_id=team_id)
     results = await TodoResponse.from_queryset(query.order_by(params.order_by.value))
+    serialized_todos = []
+    for result in results:
+        result.overdue = result.done_at is None and result.due_date < today
+        serialized_todos.append(simplify_json(result.model_dump()))
+
+    current_week_start = today - timedelta(days=today.weekday())
+    last_closed_week_start = current_week_start - timedelta(days=7)
+    tz_name = get_cached_tz(team_id=team_id)
+    week_start, next_week_start_utc = get_company_week_bounds(
+        last_closed_week_start, tz_name
+    )
+    all_team_todos = await Todo.filter(team_id=team_id).values("due_date", "done_at")
+    completion = compute_todo_completion(
+        all_team_todos, week_start, next_week_start_utc, tz_name
+    )
+
     return CustomJSONResponse(
-        content={"data": [simplify_json(result.model_dump()) for result in results]}
+        content={
+            "data": serialized_todos,
+            "last_closed_week": {
+                "week_start": week_start.isoformat(),
+                "week_end": (week_start + timedelta(days=6)).isoformat(),
+                **(
+                    completion
+                    if completion is not None
+                    else {"due": 0, "done": 0, "rate_percent": None, "meets_target": None}
+                ),
+            },
+        }
     )
 
 
@@ -449,24 +546,22 @@ async def get_quarterly_rocks_view(team_id: str, params: QuarterlyRockParams):
     if params.owner_id:
         query = query.filter(owner_id=params.owner_id)
 
+    today = await get_app_today(team_id=team_id)
     results = await query.order_by("created_at")
-    if params.status:
-        today = await get_app_today(team_id=team_id)
-        results = [
-            rock
-            for rock in results
-            if compute_rock_status(
-                rock.status.value,
-                [{"done": m.done, "due_date": m.due_date} for m in rock.milestones],
-                today,
-            )
-            == params.status.value
+    serialized_rocks = []
+    for rock in results:
+        milestones_data = [
+            {"done": m.done, "due_date": m.due_date} for m in rock.milestones
         ]
-    return CustomJSONResponse(
-        content={
-            "data": [
-                simplify_json(QuarterlyRockResponse.model_validate(result).model_dump())
-                for result in results
-            ]
-        }
-    )
+        computed_status = compute_rock_status(
+            rock.status.value, milestones_data, today
+        )
+        if params.status and computed_status != params.status.value:
+            continue
+        progress_percent = compute_rock_progress(rock.status.value, milestones_data)
+        item = QuarterlyRockResponse.model_validate(rock)
+        item.status = Rock.Status(computed_status)
+        item.progress_percent = progress_percent
+        serialized_rocks.append(simplify_json(item.model_dump()))
+
+    return CustomJSONResponse(content={"data": serialized_rocks})

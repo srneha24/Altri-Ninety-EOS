@@ -106,8 +106,15 @@ export function ScorecardSection({
     weekStart: string
   ) {
     event.preventDefault()
+    if (editingValue.trim() === "") {
+      setNotice("Enter a numeric score.")
+      return
+    }
     const value = Number(editingValue)
-    if (!Number.isFinite(value)) return
+    if (!Number.isFinite(value)) {
+      setNotice("Enter a valid numeric score.")
+      return
+    }
     try {
       await updateScore(measurableId, weekStart, value)
       setEditingKey(null)
@@ -329,7 +336,8 @@ export function ScorecardSection({
         </table>
       </div>
       <p className="border-t border-[#f1ebe6] px-5 py-3 text-[11px] text-[#91867e] sm:px-6">
-        Scores are saved to the team workspace. Closed weeks without a score are off track; an unscored current week is pending.
+        Scores are saved to the team workspace. Closed weeks without a score are off track;
+        an unscored current week is pending.
       </p>
     </section>
   )

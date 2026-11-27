@@ -7,7 +7,7 @@ from tortoise.expressions import Q
 from utils.clock import get_cached_tz
 from utils.json_actions import simplify_json
 
-from .rules import compute_meeting_rating
+from .rules import compute_measurable_status, compute_meeting_rating
 from .schemas import (
     IssueResponse,
     MeetingAttendeeResponse,
@@ -122,26 +122,18 @@ async def build_meeting_summary(meeting: Meeting) -> dict[str, Any]:
 
     avg_rating = compute_meeting_rating([attendee.rating for attendee in attendees])
 
+    current_local_date = started_local_date
+    current_week_start = current_local_date - timedelta(days=current_local_date.weekday())
     scores_by_measurable_id = {score.measurable_id: score for score in scores}
     measurable_summaries = []
     for measurable in measurables:
         score = scores_by_measurable_id.get(measurable.id)
-        status = "off_track"
-
-        if score is not None:
-            goal = measurable.goal
-            goal_type = goal.get("type")
-
-            if goal_type == "at_least":
-                on_track = score.value >= goal["value"]
-            elif goal_type == "at_most":
-                on_track = score.value <= goal["value"]
-            elif goal_type == "between":
-                on_track = goal["min"] <= score.value <= goal["max"]
-            else:  # exactly
-                on_track = score.value == goal["value"]
-
-            status = "on_track" if on_track else "off_track"
+        status = compute_measurable_status(
+            measurable.goal,
+            score.value if score is not None else None,
+            reviewed_week,
+            current_week_start,
+        )
 
         measurable_summaries.append(
             {

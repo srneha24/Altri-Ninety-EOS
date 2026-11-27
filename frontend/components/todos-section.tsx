@@ -7,9 +7,6 @@ import { Button } from "@/components/ui/button"
 import { useTeamWorkspace } from "@/components/team-workspace-provider"
 import { useWorkspaceIdentity } from "@/lib/workspace-identity"
 
-const LAST_CLOSED_WEEK_START = "2026-11-16"
-const LAST_CLOSED_WEEK_END = "2026-11-22"
-
 function todoOwnerName(
   ownerId: string,
   members: { id: string; name: string }[]
@@ -50,16 +47,15 @@ export function TodosSection() {
   const identity = useWorkspaceIdentity()
   const { todos, issues, toggleTodo, members, today } = teamWorkspace
   const role = identity?.role ?? teamWorkspace.role
-  const currentWeek = teamWorkspace?.weeks[teamWorkspace.weeks.length - 1]
-  const lastClosedWeekStart = currentWeek
-    ? addDays(currentWeek, -7)
-    : LAST_CLOSED_WEEK_START
-  const lastClosedWeekEnd = teamWorkspace
+  const currentWeek = teamWorkspace.weeks[teamWorkspace.weeks.length - 1]
+  const lastClosedWeekStart = currentWeek ? addDays(currentWeek, -7) : ""
+  const lastClosedWeekEnd = lastClosedWeekStart
     ? addDays(lastClosedWeekStart, 6)
-    : LAST_CLOSED_WEEK_END
+    : ""
   const canWrite = role !== "observer"
 
   const completion = useMemo(() => {
+    if (!lastClosedWeekStart || !lastClosedWeekEnd) return null
     const dueLastWeek = todos.filter(
       (todo) =>
         todo.dueDate >= lastClosedWeekStart &&
@@ -71,7 +67,10 @@ export function TodosSection() {
         todo.doneAt !== null &&
         companyDate(todo.doneAt) <= lastClosedWeekEnd
     ).length
-    return Math.floor((doneByEnd / dueLastWeek.length) * 100 + 0.5)
+    return {
+      ratePercent: Math.floor((doneByEnd / dueLastWeek.length) * 100 + 0.5),
+      meetsTarget: doneByEnd * 10 >= dueLastWeek.length * 9,
+    }
   }, [lastClosedWeekEnd, lastClosedWeekStart, todos])
 
   return (
@@ -96,14 +95,14 @@ export function TodosSection() {
             Last closed week · {shortDate(lastClosedWeekStart)}–{shortDate(lastClosedWeekEnd)}
           </p>
           <p className="mt-0.5 text-sm font-semibold text-[#30261f]">
-            {completion === null ? "No To-Dos due" : `${completion}% complete`}
+            {completion === null ? "No To-Dos due" : `${completion.ratePercent}% complete`}
             {completion !== null ? (
               <span
                 className={`ml-2 text-[10px] font-semibold ${
-                  completion >= 90 ? "text-emerald-700" : "text-[#a64e16]"
+                  completion.meetsTarget ? "text-emerald-700" : "text-[#a64e16]"
                 }`}
               >
-                {completion >= 90 ? "On target · 90%" : "Target · 90%"}
+                {completion.meetsTarget ? "On target · 90%" : "Target · 90%"}
               </span>
             ) : null}
           </p>

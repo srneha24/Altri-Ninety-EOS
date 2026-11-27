@@ -67,18 +67,29 @@ async def meeting_state_view(
             raise HTTPException(detail="Meeting Has Already Ended", status_code=400)
 
         if payload.state == MeetingState.IDS and (
-            meeting.ids_started_at is not None or meeting.conclude_started_at is not None
+            meeting.ids_started_at is not None
+            or meeting.conclude_started_at is not None
         ):
-            raise HTTPException(detail="Invalid meeting state transition", status_code=400)
-        if payload.state == MeetingState.CONCLUDE and meeting.conclude_started_at is not None:
-            raise HTTPException(detail="Invalid meeting state transition", status_code=400)
+            raise HTTPException(
+                detail="Invalid meeting state transition", status_code=400
+            )
+        if (
+            payload.state == MeetingState.CONCLUDE
+            and meeting.conclude_started_at is not None
+        ):
+            raise HTTPException(
+                detail="Invalid meeting state transition", status_code=400
+            )
 
         meeting.update_from_dict(
             {state_to_datetime_field_mapping.get(payload.state): get_app_now()}
         )
         await meeting.save()
         if payload.state == MeetingState.END:
-            background_tasks.add_task(save_meeting_summary, meeting.id)
+            # Generate the summary synchronously so the END response only returns
+            # once the summary is persisted. This removes the 503 "Still Being
+            # Generated" window for clients polling right after END.
+            await save_meeting_summary(meeting.id)
 
     meeting.state = payload.state.value
     meeting.server_now = get_app_now()
@@ -226,7 +237,7 @@ async def get_active_meeting_view(team_id: str):
     )
 
     if not meeting:
-        raise HTTPException(detail="No Active Meeting", status_code=400)
+        raise HTTPException(detail="No Active Meeting", status_code=404)
 
     if meeting.conclude_started_at:
         meeting.state = MeetingState.CONCLUDE.value
@@ -243,18 +254,26 @@ async def get_active_meeting_view(team_id: str):
     )
 
 
-async def _get_workspace_revision(team_id: str) -> tuple[str | None, str | None, str | None]:
+async def _get_workspace_revision(
+    team_id: str,
+) -> tuple[tuple[tuple[str, str], ...], tuple[tuple[str, str], ...], tuple[tuple[str, str], ...]]:
     latest_score = (
-        await Score.filter(measurable__team_id=team_id)
-        .order_by("-updated_at")
-        .first()
+        await Score.filter(measurable__team_id=team_id).order_by("-updated_at").first()
     )
-    latest_issue = await Issue.filter(team_id=team_id).order_by("-updated_at").first()
-    latest_todo = await Todo.filter(team_id=team_id).order_by("-updated_at").first()
+    # Track each row, not only the latest timestamp: frozen APP_NOW and
+    # same-tick updates can leave the maximum timestamp unchanged.
+    issue_revisions = tuple(
+        (row["id"], row["updated_at"].isoformat())
+        for row in await Issue.filter(team_id=team_id).order_by("id").values("id", "updated_at")
+    )
+    todo_revisions = tuple(
+        (row["id"], row["updated_at"].isoformat())
+        for row in await Todo.filter(team_id=team_id).order_by("id").values("id", "updated_at")
+    )
     return (
-        latest_score.updated_at.isoformat() if latest_score else None,
-        latest_issue.updated_at.isoformat() if latest_issue else None,
-        latest_todo.updated_at.isoformat() if latest_todo else None,
+        ((latest_score.id, latest_score.updated_at.isoformat()),) if latest_score else (),
+        issue_revisions,
+        todo_revisions,
     )
 
 
