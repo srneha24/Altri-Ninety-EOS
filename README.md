@@ -23,7 +23,7 @@ Design decisions are in the decision record: [Decisions Record.md](docs/Decision
 - [Rules Report](#rules-report)
 - [Assumptions](#assumptions)
 - [Known Limitations](#known-limitations)
-- [Implemented Bonues Tasks](#implemented-bonues-tasks)
+- [Implemented Bonus Tasks](#implemented-bonus-tasks)
 - [AI Tools Used](#ai-tools-used)
 
 ## Deliverables Overview
@@ -34,7 +34,7 @@ Design decisions are in the decision record: [Decisions Record.md](docs/Decision
   - Output JSON ([rules_report.json](backend/rules_report.json))
 - [Playwright Failed Artifact](frontend/artifacts/meeting-sync-failure-trace.zip)
 - [Decisions Record.md](docs/Decisions%20Record.md)
-- [App Recording Loom](...)
+- [App Recording Loom](https://www.loom.com/share/053263bc308a462496cb43f457e96915)
 
 ## Repository Layout
 
@@ -134,7 +134,7 @@ The committed output for a freshly seeded database at the default `APP_NOW` is `
 - Meeting activity is attributed by timestamp window, not by a stored meeting reference.
 - The test script needs a host-reachable PostgreSQL and the PostgreSQL client tools installed (see Tests).
 
-## Implemented Bonues Tasks
+## Implemented Bonus Tasks
 
 - **Make a Rock an Issue:** Team Members and Admins can create an Issue from an off-track Rock with an overdue milestone. The Issue links back to its source Rock, and an existing unsolved Issue is shown instead of creating a duplicate.
 - **Make an overdue To-Do an Issue:** Team Members and Admins can create an Issue from an overdue, incomplete To-Do. The Issue links back to its source To-Do; an existing unsolved Issue is shown instead of creating a duplicate.
