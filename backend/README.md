@@ -1,6 +1,6 @@
 # Backend (FastAPI API)
 
-REST API and live meeting stream for Altri Ninety EOS. For the product overview, tests and assumptions see the [project README](../README.md).
+REST API and live meeting stream for Altri Ninety EOS. For the product overview, tests and assumptions see the [project README](../README.md). The API documentations, generated using Apidog during backend development, are also added in the repository &rarr; ([OpenAPI Spec](../docs/Altri%20Ninety%20EOS%20API%20Documentation.openapi.json) | [Markdown](../docs/Altri%20Ninety%20EOS%20API%20Documentation.md)).
 
 ## Stack
 

@@ -4,8 +4,6 @@ A team-management app modeled on Ninety's EOS edition: Scorecard (Measurables), 
 
 **Stack:** Next.js (TypeScript, shadcn/ui, Tailwind) · FastAPI + Tortoise ORM · PostgreSQL 17 · Server-Sent Events for live meetings.
 
-Design decisions are in the decision record: [Decisions Record.md](docs/Decisions%20Record.md).
-
 **More documentation:** [Backend README](backend/README.md) (API setup, configuration, layout) · [Frontend README](frontend/README.md) (app setup, configuration, layout).
 
 ## Table of Contents
@@ -58,7 +56,7 @@ The backend container runs migrations, loads `seed.json` and starts the API. The
 | Frontend | <http://localhost:3000> |
 | API | <http://localhost:8000> |
 | API docs (OpenAPI, live) | <http://localhost:8000/docs> |
-| API documentation (Apidog, public) | [Altri Ninety EOS on Apidog](https://share.apidog.com/e1be8b3d-6dcd-4a1f-a62e-f782bb60046e) |
+| API documentation | [OpenAPI JSON](docs/Altri%20Ninety%20EOS%20API%20Documentation.openapi.json) \| [Markdown](docs/Altri%20Ninety%20EOS%20API%20Documentation.md) |
 
 ### Signing In
 
